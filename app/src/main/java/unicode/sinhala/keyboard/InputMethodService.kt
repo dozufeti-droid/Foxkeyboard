@@ -775,6 +775,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     private var lastChar: CHAR? = null
     private var lastLetter: CHAR? = null
+    // The first h in ch is part of Helakuru-style ch; only chh makes ඡ.
+    private var pendingChDigraph = false
     private var positionFlag = ""
 
     private fun hasPositionChanged(): Boolean =
@@ -791,12 +793,32 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         if (!hasPositionChanged()) {
             mLastChar = lastChar
             mLastLetter = lastLetter
+        } else {
+            // Cursor movement, external edits and other keyboard actions break a digraph.
+            pendingChDigraph = false
         }
 
         lastChar = null
         lastLetter = null
 
         var singlishChar: CHAR = getSinglishChars(input) ?: CHAR.EMPTY
+
+        // c + h is still ච; c + h + h becomes ඡ. Keep the first h as
+        // pending state rather than inserting an extra character.
+        val previousChPending = pendingChDigraph
+        pendingChDigraph = false
+        if ((input == "h" || input == "H") &&
+            mLastChar == CHAR.SIGN_AL_LAKUNA &&
+            mLastLetter == CHAR.ALPAPRAANA_CAYANNA &&
+            !previousChPending
+        ) {
+            pendingChDigraph = true
+            lastChar = mLastChar
+            lastLetter = mLastLetter
+            positionFlag = currentInputConnection?.getTextBeforeCursor(5, 0)
+                ?.toString().orEmpty()
+            return
+        }
 
         fun newLetter() {
             output = singlishChar.text
@@ -1097,7 +1119,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                             }
 
                             CHAR.IRUYANNA -> {
-                                if (singlishChar.code == CHAR.IYANNA.code) {
+                                // Helakuru phonetic documentation uses Ru for ඎ.
+                                if (singlishChar.code == CHAR.UYANNA.code) {
                                     output = CHAR.IRUUYANNA.text
                                     erasePreviousChars = 1
                                     tLastLetter = CHAR.IRUUYANNA
@@ -1113,11 +1136,20 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                             }
 
                             CHAR.OYANNA -> {
-                                if (singlishChar.code == CHAR.OYANNA.code) {
-                                    output = CHAR.OOYANNA.text
-                                    erasePreviousChars = 1
-                                    tLastLetter = CHAR.OOYANNA
-                                } else newLetter()
+                                when (singlishChar.code) {
+                                    CHAR.OYANNA.code -> {
+                                        output = CHAR.OOYANNA.text
+                                        erasePreviousChars = 1
+                                        tLastLetter = CHAR.OOYANNA
+                                    }
+                                    CHAR.UYANNA.code -> {
+                                        // Both au and ou produce ඖ.
+                                        output = CHAR.AUYANNA.text
+                                        erasePreviousChars = 1
+                                        tLastLetter = CHAR.AUYANNA
+                                    }
+                                    else -> newLetter()
+                                }
                             }
 
                             else -> newLetter()
