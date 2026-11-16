@@ -10,7 +10,8 @@ object AiSinhalaTranslator {
     fun translate(
         text: String,
         model: String,
-        apiKey: String
+        apiKey: String,
+        provider: String = "GroqCloud"
     ): String {
         require(text.isNotBlank()) { "No text to translate" }
         require(model.isNotBlank()) { "Model ID is missing" }
@@ -38,7 +39,7 @@ object AiSinhalaTranslator {
             val part = text.substring(start, end).trim()
 
             if (part.isNotEmpty()) {
-                results.add(translatePart(part, model, apiKey))
+                results.add(translatePart(part, model, apiKey, provider))
             }
 
             start = end
@@ -50,7 +51,8 @@ object AiSinhalaTranslator {
     private fun translatePart(
         text: String,
         model: String,
-        apiKey: String
+        apiKey: String,
+        provider: String
     ): String {
         val messages = JSONArray()
             .put(
@@ -88,6 +90,15 @@ object AiSinhalaTranslator {
                     .put("content", text)
             )
 
+        if (provider == "Google Gemini") {
+            return GeminiTranslator.translateSinhala(
+                text,
+                messages.getJSONObject(0).getString("content"),
+                model,
+                apiKey
+            )
+        }
+        require(provider == "GroqCloud") { "Unsupported translation provider" }
         val body = JSONObject()
             .put("model", model)
             .put("messages", messages)

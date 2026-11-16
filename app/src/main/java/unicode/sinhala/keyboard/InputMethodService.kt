@@ -221,9 +221,9 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         val model = prefs.getString("ai_model_$provider", "")
             ?.trim().orEmpty()
 
-        if (provider != "GroqCloud" || model.isBlank()) {
+        if (provider !in setOf("GroqCloud", "Google Gemini") || model.isBlank()) {
             panel.visibility = View.VISIBLE
-            output.text = "Select GroqCloud and set Model ID in AI Settings."
+            output.text = "Select GroqCloud or Google Gemini and set Model ID in AI Settings."
             return
         }
 
@@ -243,7 +243,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                     ).load(provider) ?: error("No saved API Key")
 
                     unicode.sinhala.keyboard.ai.AiSinhalaTranslator.translate(
-                        source, model, key
+                        source, model, key, provider
                     )
                 }
 
@@ -645,9 +645,9 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         val provider = prefs.getString("ai_provider", "GroqCloud")
             ?: "GroqCloud"
 
-        if (provider != "GroqCloud") {
-            keyboardView.aiEnglishView.text = "English: Select GroqCloud"
-            keyboardView.aiKoreanView.text = "Korean: Select GroqCloud"
+        if (provider !in setOf("GroqCloud", "Google Gemini")) {
+            keyboardView.aiEnglishView.text = "English: Select GroqCloud or Gemini"
+            keyboardView.aiKoreanView.text = "Korean: Select GroqCloud or Gemini"
             return
         }
 
@@ -672,7 +672,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                     ).load(provider) ?: error("No saved API Key")
 
                     unicode.sinhala.keyboard.ai.AiTranslator.translate(
-                        source, model, key
+                        source, model, key, provider
                     )
                 }
 

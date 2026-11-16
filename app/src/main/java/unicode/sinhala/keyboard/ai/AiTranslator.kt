@@ -67,7 +67,7 @@ object AiTranslator {
         return JSONObject().put("type", "json_object")
     }
 
-    fun translate(text: String, model: String, apiKey: String): Pair<String, String> {
+    fun translate(text: String, model: String, apiKey: String, provider: String = "GroqCloud"): Pair<String, String> {
         require(text.isNotBlank()) { "Message is empty" }
         require(model.isNotBlank()) { "Model is missing" }
         require(apiKey.isNotBlank()) { "API key is missing" }
@@ -78,6 +78,12 @@ object AiTranslator {
         if (glossary.isNotEmpty()) {
             source.put("romanized_sinhala_meaning_clues", glossary)
         }
+        if (provider == "Google Gemini") {
+            return GeminiTranslator.translatePair(
+                source.toString(), instructions, model, apiKey, text
+            )
+        }
+        require(provider == "GroqCloud") { "Unsupported translation provider" }
         val messages = JSONArray()
             .put(JSONObject().put("role", "system").put("content", instructions))
             .put(JSONObject().put("role", "user").put("content", source.toString()))
