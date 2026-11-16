@@ -26,6 +26,11 @@ import unicode.sinhala.keyboard.ui.components.SwitchPreference
 fun SettingsScreen() {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    var showAiSettings by remember { mutableStateOf(false) }
+    if (showAiSettings) {
+        AiSettingsScreen(onBack = { showAiSettings = false })
+        return
+    }
 
     Column(
         modifier = Modifier
@@ -53,6 +58,13 @@ fun SettingsScreen() {
             title = stringResource(R.string.singlish),
             checked = layoutSinglish.value,
             onCheckedChange = { layoutSinglish.value = it }
+        )
+
+        SettingsCategory(title = "AI Translation")
+        PreferenceItem(
+            title = "AI Provider & API Key",
+            summary = "Configure translation providers",
+            onClick = { showAiSettings = true }
         )
 
         SettingsCategory(title = "Appearance & Theme")
