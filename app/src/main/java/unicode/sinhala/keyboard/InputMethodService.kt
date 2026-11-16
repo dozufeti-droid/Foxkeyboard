@@ -69,6 +69,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
     private var aiTranslationJob: Job? = null
+    private var aiTranslationSource: String? = null
+    private var aiTranslationEnglish: String? = null
+    private var aiTranslationKorean: String? = null
+
     private var userInvokedInputMethodPicker = false
 
     private var suggestionEngine: SuggestionEngine? = null
@@ -230,7 +234,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 Prefs.getDarkTheme(this)
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
-            keyboardView.setAiTranslationClickListener { requestAiTranslation() }
+            
+            keyboardView.aiEnglishView.setOnClickListener {
+                onAiTranslationRowTap(true)
+            }
+            keyboardView.aiKoreanView.setOnClickListener {
+                onAiTranslationRowTap(false)
+            }
 
             return keyboardView
         } catch (t: Throwable) {
@@ -277,6 +287,9 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
         aiTranslationJob?.cancel()
+        aiTranslationSource = null
+        aiTranslationEnglish = null
+        aiTranslationKorean = null
         if (::keyboardView.isInitialized) {
             keyboardView.aiEnglishView.text = "🇬🇧 English translation"
             keyboardView.aiKoreanView.text = "🇰🇷 Korean translation"
@@ -420,7 +433,59 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
 
+
+    private fun onAiTranslationRowTap(english: Boolean) {
+        val source = aiTranslationSource
+        val translated = if (english) {
+            aiTranslationEnglish
+        } else {
+            aiTranslationKorean
+        }
+
+        if (source == null || translated == null) {
+            requestAiTranslation()
+            return
+        }
+
+        val ic = currentInputConnection ?: return
+        val selected = ic.getSelectedText(0)?.toString()
+        val selectionMatches = selected?.trim() == source
+
+        if (!selectionMatches) {
+            val before = ic.getTextBeforeCursor(500, 0)
+                ?.toString().orEmpty()
+
+            if (!before.endsWith(source)) {
+                requestAiTranslation()
+                return
+            }
+        }
+
+        ic.beginBatchEdit()
+        try {
+            if (!selectionMatches) {
+                ic.deleteSurroundingText(source.length, 0)
+            }
+            ic.commitText(translated, 1)
+        } finally {
+            ic.endBatchEdit()
+        }
+
+        aiTranslationSource = null
+        aiTranslationEnglish = null
+        aiTranslationKorean = null
+
+        keyboardView.aiEnglishView.text =
+            "🇬🇧 Tap to translate"
+        keyboardView.aiKoreanView.text =
+            "🇰🇷 Tap to translate"
+    }
+
     private fun requestAiTranslation() {
+        aiTranslationSource = null
+        aiTranslationEnglish = null
+        aiTranslationKorean = null
+
         val info = currentInputEditorInfo ?: return
         val inputType = info.inputType
         val variation = inputType and InputType.TYPE_MASK_VARIATION
@@ -491,6 +556,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
                 if (currentInputEditorInfo !== info) return@launch
 
+
+                aiTranslationSource = source
+                aiTranslationEnglish = result.first
+                aiTranslationKorean = result.second
                 keyboardView.aiEnglishView.text = "🇬🇧 ${result.first}"
                 keyboardView.aiKoreanView.text = "🇰🇷 ${result.second}"
             } catch (e: kotlinx.coroutines.CancellationException) {
