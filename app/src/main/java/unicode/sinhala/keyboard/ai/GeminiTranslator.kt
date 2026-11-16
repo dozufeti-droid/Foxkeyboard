@@ -7,7 +7,42 @@ import java.net.URL
 
 /** On-demand Gemini translation. Does not read the clipboard or send keystrokes. */
 object GeminiTranslator {
+    // FOX_GEMINI_RELIABILITY_V1: retry only transient Gemini/network errors.
+    private class RetryableGeminiException(message: String) : IllegalStateException(message)
+
     private fun request(
+        text: String,
+        instructions: String,
+        model: String,
+        apiKey: String,
+        jsonResult: Boolean
+    ): String {
+        var retries = 0
+        while (true) {
+            try {
+                return requestOnce(text, instructions, model, apiKey, jsonResult)
+            } catch (e: RetryableGeminiException) {
+                // For 500/502/503/504: max 2 retries, with backoff.
+                if (retries >= 2) throw e
+            } catch (e: java.io.IOException) {
+                // Network timeouts/reset: max 1 retry. Authentication/quota errors
+                // are IllegalStateException and deliberately never retried.
+                if (retries >= 1) {
+                    throw IllegalStateException("Gemini connection timed out or interrupted", e)
+                }
+            }
+            val pauseMs = if (retries == 0) 1200L else 3000L
+            try {
+                Thread.sleep(pauseMs)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IllegalStateException("Translation interrupted", e)
+            }
+            retries++
+        }
+    }
+
+    private fun requestOnce(
         text: String,
         instructions: String,
         model: String,
@@ -51,7 +86,7 @@ object GeminiTranslator {
         try {
             connection.requestMethod = "POST"
             connection.connectTimeout = 15000
-            connection.readTimeout = 35000
+            connection.readTimeout = 45000
             connection.instanceFollowRedirects = false
             connection.doOutput = true
             connection.setRequestProperty("x-goog-api-key", apiKey)
@@ -68,6 +103,9 @@ object GeminiTranslator {
                     429 -> "Gemini rate limit reached"
                     in 500..599 -> "Gemini server error"
                     else -> "Gemini connection error"
+                }
+                if (status == 500 || status == 502 || status == 503 || status == 504) {
+                    throw RetryableGeminiException("$reason (HTTP $status)")
                 }
                 throw IllegalStateException("$reason (HTTP $status)")
             }

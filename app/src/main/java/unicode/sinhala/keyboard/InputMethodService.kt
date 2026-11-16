@@ -256,9 +256,20 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 if (aiSinhalaSource != source) return@launch
-                output.text = "Translation failed. Check API settings or connection."
+                val reason = e.message.orEmpty()
+                output.text = when {
+                    reason.contains("rate limit", true) || reason.contains("HTTP 429") ->
+                        "Gemini free limit reached. Try later."
+                    reason.contains("server error", true) || reason.contains("HTTP 50") ->
+                        "Gemini is busy. Please retry shortly."
+                    reason.contains("timed out", true) || reason.contains("connection", true) ->
+                        "Connection failed. Check internet and retry."
+                    reason.contains("API Key", true) || reason.contains("permission", true) ->
+                        "Check saved API Key and model settings."
+                    else -> "Translation failed. Please try again."
+                }
                 button.text = "🇱🇰 Sinhala Translate"
             }
         }
@@ -705,8 +716,20 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                     keyboardView.aiEnglishView.text = "🇬🇧 Meaning unclear — rephrase"
                     keyboardView.aiKoreanView.text = "🇰🇷 Check the Sinhala wording"
                 } else {
-                    keyboardView.aiEnglishView.text = "English: Translation failed"
-                    keyboardView.aiKoreanView.text = "Korean: Check API settings"
+                    val reason = e.message.orEmpty()
+                    val hint = when {
+                        reason.contains("rate limit", true) || reason.contains("HTTP 429") ->
+                            "Free limit reached — retry later"
+                        reason.contains("server error", true) || reason.contains("HTTP 50") ->
+                            "AI server busy — retry shortly"
+                        reason.contains("timed out", true) || reason.contains("connection", true) ->
+                            "Connection timed out — retry"
+                        reason.contains("API Key", true) || reason.contains("permission", true) ->
+                            "Check saved API Key"
+                        else -> "Translation failed — retry"
+                    }
+                    keyboardView.aiEnglishView.text = "🇬🇧 $hint"
+                    keyboardView.aiKoreanView.text = "🇰🇷 $hint"
                 }
             }
         }
