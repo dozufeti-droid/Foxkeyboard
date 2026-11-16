@@ -90,7 +90,6 @@ fun AiSettingsScreen(onBack: () -> Unit) {
         }
 
         Text("Selected: $provider")
-        AiConnectionControls(provider, model)
         AiKeyControls(provider)
         OutlinedTextField(
             value = model,
@@ -102,11 +101,8 @@ fun AiSettingsScreen(onBack: () -> Unit) {
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
+        AiConnectionControls(provider, model)
 
 
-        Text(
-            "API Key and Model configuration " +
-            "will be added next."
-        )
     }
 }
