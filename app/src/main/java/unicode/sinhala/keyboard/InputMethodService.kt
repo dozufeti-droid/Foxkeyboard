@@ -633,6 +633,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             keyboardView.aiKoreanView.text = "Korean: Enter some text"
             return
         }
+        // Fox AI quality repair v4: do not invent an ending for unfinished Singlish.
+        if (unicode.sinhala.keyboard.ai.SinglishTranslationHints.isUnfinished(source)) {
+            keyboardView.aiEnglishView.text = "🇬🇧 Finish the sentence, then translate"
+            keyboardView.aiKoreanView.text = "🇰🇷 Finish the sentence, then translate"
+            return
+        }
+
 
         val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
         val provider = prefs.getString("ai_provider", "GroqCloud")
@@ -671,6 +678,18 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
                 if (currentInputEditorInfo !== info) return@launch
 
+                // The user may have edited the message while the network call ran.
+                val latestDraft = (
+                    currentInputConnection?.getSelectedText(0)?.toString()
+                        ?.takeIf { it.isNotBlank() }
+                        ?: currentInputConnection?.getTextBeforeCursor(500, 0)
+                            ?.toString()?.substringAfterLast('\n')
+                )?.trim()
+                if (latestDraft != source) {
+                    keyboardView.aiEnglishView.text = "🇬🇧 Text changed — translate again"
+                    keyboardView.aiKoreanView.text = "🇰🇷 Text changed — translate again"
+                    return@launch
+                }
 
                 aiTranslationSource = source
                 aiTranslationEnglish = result.first
@@ -681,8 +700,14 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 throw e
             } catch (e: Exception) {
                 if (currentInputEditorInfo !== info) return@launch
-                keyboardView.aiEnglishView.text = "English: Translation failed"
-                keyboardView.aiKoreanView.text = "Korean: Check API settings"
+                if (e.message?.startsWith("Pronoun conflict") == true ||
+                    e.message?.startsWith("Idiom conflict") == true) {
+                    keyboardView.aiEnglishView.text = "🇬🇧 Meaning unclear — rephrase"
+                    keyboardView.aiKoreanView.text = "🇰🇷 Check the Sinhala wording"
+                } else {
+                    keyboardView.aiEnglishView.text = "English: Translation failed"
+                    keyboardView.aiKoreanView.text = "Korean: Check API settings"
+                }
             }
         }
     }
