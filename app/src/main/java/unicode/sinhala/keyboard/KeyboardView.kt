@@ -70,6 +70,24 @@ class KeyboardView(
     private lateinit var emojiAdapter: EmojiAdapter
     private var clipboardAdapter: ClipboardAdapter? = null
 
+    val aiEnglishView: TextView
+        get() = findViewById(R.id.ai_english)
+
+    val aiKoreanView: TextView
+        get() = findViewById(R.id.ai_korean)
+
+    fun setAiTranslationClickListener(
+        onRequest: () -> Unit
+    ) {
+        aiEnglishView.setOnClickListener {
+            onRequest()
+        }
+
+        aiKoreanView.setOnClickListener {
+            onRequest()
+        }
+    }
+
     val viewBlank1: View get() = binding.blank1
     val viewBlank2: View get() = binding.blank2
     val buttonColon: KeyboardButton get() = binding.colonWijesekara

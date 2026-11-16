@@ -68,6 +68,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
 
 
+    private var aiTranslationJob: Job? = null
     private var userInvokedInputMethodPicker = false
 
     private var suggestionEngine: SuggestionEngine? = null
@@ -229,6 +230,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 Prefs.getDarkTheme(this)
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
+            keyboardView.setAiTranslationClickListener { requestAiTranslation() }
 
             return keyboardView
         } catch (t: Throwable) {
@@ -274,6 +276,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
+        aiTranslationJob?.cancel()
+        if (::keyboardView.isInitialized) {
+            keyboardView.aiEnglishView.text = "🇬🇧 English translation"
+            keyboardView.aiKoreanView.text = "🇰🇷 Korean translation"
+        }
          lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
          Log.d("IME", "onStartInputView called restarting=$restarting info=")
 
@@ -337,6 +344,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        aiTranslationJob?.cancel()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         Log.d("IME", "onFinishInputView called finishingInput=$finishingInput")
 
@@ -409,6 +417,90 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         } catch (_: Throwable) {}
 
         checkAutoUnshift()
+    }
+
+
+    private fun requestAiTranslation() {
+        val info = currentInputEditorInfo ?: return
+        val inputType = info.inputType
+        val variation = inputType and InputType.TYPE_MASK_VARIATION
+
+        val allowed = variation == InputType.TYPE_TEXT_VARIATION_NORMAL ||
+            variation == InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE ||
+            variation == InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+
+        if ((inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT ||
+            !allowed ||
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
+            keyboardView.aiEnglishView.text = "English: Unavailable in this field"
+            keyboardView.aiKoreanView.text = "Korean: Unavailable in this field"
+            return
+        }
+
+        val selected = currentInputConnection
+            ?.getSelectedText(0)?.toString()
+
+        val source = (selected?.takeIf { it.isNotBlank() }
+            ?: currentInputConnection
+                ?.getTextBeforeCursor(500, 0)
+                ?.toString()
+                ?.substringAfterLast('\n'))
+            ?.trim()
+
+        if (source.isNullOrBlank()) {
+            keyboardView.aiEnglishView.text = "English: Enter some text"
+            keyboardView.aiKoreanView.text = "Korean: Enter some text"
+            return
+        }
+
+        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+        val provider = prefs.getString("ai_provider", "GroqCloud")
+            ?: "GroqCloud"
+
+        if (provider != "GroqCloud") {
+            keyboardView.aiEnglishView.text = "English: Select GroqCloud"
+            keyboardView.aiKoreanView.text = "Korean: Select GroqCloud"
+            return
+        }
+
+        val model = prefs.getString("ai_model_$provider", "")
+            ?.trim().orEmpty()
+
+        if (model.isBlank()) {
+            keyboardView.aiEnglishView.text = "English: Set Model ID"
+            keyboardView.aiKoreanView.text = "Korean: Set Model ID"
+            return
+        }
+
+        aiTranslationJob?.cancel()
+        keyboardView.aiEnglishView.text = "English: Translating..."
+        keyboardView.aiKoreanView.text = "Korean: Translating..."
+
+        aiTranslationJob = serviceScope.launch {
+            try {
+                val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    val key = unicode.sinhala.keyboard.ai.ApiKeyStore(
+                        this@InputMethodService
+                    ).load(provider) ?: error("No saved API Key")
+
+                    unicode.sinhala.keyboard.ai.AiTranslator.translate(
+                        source, model, key
+                    )
+                }
+
+                if (currentInputEditorInfo !== info) return@launch
+
+                keyboardView.aiEnglishView.text = "🇬🇧 ${result.first}"
+                keyboardView.aiKoreanView.text = "🇰🇷 ${result.second}"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (currentInputEditorInfo !== info) return@launch
+                keyboardView.aiEnglishView.text = "English: Translation failed"
+                keyboardView.aiKoreanView.text = "Korean: Check API settings"
+            }
+        }
     }
 
     private fun checkAutoUnshift() {
