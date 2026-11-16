@@ -73,4 +73,19 @@
         <item name="border">@android:color/transparent</item>
         <item name="keyShadowColor">@android:color/transparent</item>
     </style>
+    <!-- Original flat charcoal keyboard style; existing app themes unchanged. -->
+    <style name="FoxHelakuruFlat" parent="NightNoBorder">
+        <item name="fox_background">#273238</item>
+        <item name="foreground">#F5F7F7</item>
+        <item name="foreground_2">#A9B3B7</item>
+        <item name="accent">#53676E</item>
+        <item name="keyNormal">#36454A</item>
+        <item name="keyFunction">#273238</item>
+        <item name="keySpecial">#273238</item>
+        <item name="keyAction">#39494F</item>
+        <item name="keyNormalPressed">#465A61</item>
+        <item name="keyFunctionPressed">#465A61</item>
+        <item name="keySpecialPressed">#465A61</item>
+        <item name="keyActionPressed">#566A71</item>
+    </style>
 </resources>

@@ -70,9 +70,11 @@ class KeyboardButton : AppCompatTextView {
         }
 
         secondaryLabelPaint.color = currentTextColor
-        secondaryLabelPaint.alpha = 150 // Semi-transparent
-        secondaryLabelPaint.textAlign = Paint.Align.RIGHT
-        secondaryLabelPaint.textSize = textSize * 0.5f
+        secondaryLabelPaint.alpha = 125 // Subtle small Sinhala/number hint
+        secondaryLabelPaint.textAlign = Paint.Align.CENTER
+        secondaryLabelPaint.textSize = TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_SP, 8f, resources.displayMetrics
+        )
     }
 
     private fun convertTagToText(raw: String): String {
@@ -102,11 +104,13 @@ class KeyboardButton : AppCompatTextView {
         super.onDraw(canvas)
         secondaryLabel?.let {
             secondaryLabelPaint.color = currentTextColor
-            secondaryLabelPaint.alpha = 150
-            secondaryLabelPaint.textSize = textSize * 0.5f
-            
-            val padding = 8f
-            canvas.drawText(it, width.toFloat() - padding, secondaryLabelPaint.textSize + padding, secondaryLabelPaint)
+            secondaryLabelPaint.alpha = 125
+            secondaryLabelPaint.textAlign = Paint.Align.CENTER
+            secondaryLabelPaint.textSize = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_SP, 8f, resources.displayMetrics
+            )
+            val baseline = maxOf(height * 0.27f, secondaryLabelPaint.textSize + 1f)
+            canvas.drawText(it, width * 0.5f, baseline, secondaryLabelPaint)
         }
     }
 }

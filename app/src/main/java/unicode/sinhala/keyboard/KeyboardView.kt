@@ -201,7 +201,7 @@ class KeyboardView(
     init {
         // Helakuru-inspired UI experiment: dark keys without individual borders.
         // This branch is isolated; the original theme logic remains in backup.
-        val style = R.style.NightNoBorder
+        val style = R.style.FoxHelakuruFlat
 
         val contextThemeWrapper = ContextThemeWrapper(context, style)
 
@@ -223,6 +223,22 @@ class KeyboardView(
                     fallbackT
                 )
                 throw RuntimeException("Failed to inflate keyboard layout.", fallbackT)
+            }
+        }
+
+        // Full key-cell touch targets, with no separate letter tile visuals.
+        // Match the supplied screenshot's charcoal background (#273238).
+        val flatBackground = Color.rgb(39, 50, 56)
+        binding.root.setBackgroundColor(flatBackground)
+        binding.keyboardRows.setBackgroundColor(flatBackground)
+        binding.topBar.setBackgroundColor(Color.rgb(34, 39, 43))
+        for (row in listOf(binding.keyRow2, binding.keyRow3, binding.keyRow4)) {
+            for (child in row.children) {
+                if (child is KeyboardButton) {
+                    child.background = AppCompatResources.getDrawable(
+                        contextThemeWrapper, R.drawable.fox_flat_letter_key
+                    )
+                }
             }
         }
 
