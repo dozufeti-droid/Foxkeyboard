@@ -90,6 +90,7 @@ fun AiSettingsScreen(onBack: () -> Unit) {
         }
 
         Text("Selected: $provider")
+        AiConnectionControls(provider, model)
         AiKeyControls(provider)
         OutlinedTextField(
             value = model,
