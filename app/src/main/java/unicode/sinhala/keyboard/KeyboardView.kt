@@ -88,6 +88,15 @@ class KeyboardView(
         }
     }
 
+    val aiSinhalaButtonView: TextView
+        get() = findViewById(R.id.ai_sinhala_button)
+
+    val aiSinhalaTextView: TextView
+        get() = findViewById(R.id.ai_sinhala_text)
+
+    val aiSinhalaPanelView: View
+        get() = findViewById(R.id.ai_sinhala_panel)
+
     val viewBlank1: View get() = binding.blank1
     val viewBlank2: View get() = binding.blank2
     val buttonColon: KeyboardButton get() = binding.colonWijesekara

@@ -69,6 +69,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
     private var aiTranslationJob: Job? = null
+    private var aiSinhalaJob: Job? = null
+    private var aiSinhalaSource: String? = null
+    private var aiSinhalaResult: String? = null
+
     private var aiTranslationSource: String? = null
     private var aiTranslationEnglish: String? = null
     private var aiTranslationKorean: String? = null
@@ -168,6 +172,98 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         }
     }
 
+
+    private fun onSinhalaTranslateTap() {
+        val panel = keyboardView.aiSinhalaPanelView
+        val output = keyboardView.aiSinhalaTextView
+        val button = keyboardView.aiSinhalaButtonView
+
+        // Only read copied plain text after the user taps.
+        val source = try {
+            clipboardManager?.primaryClip
+                ?.takeIf { it.itemCount > 0 }
+                ?.getItemAt(0)
+                ?.text
+                ?.toString()
+                ?.trim()
+        } catch (_: Exception) {
+            null
+        }
+
+        if (source.isNullOrBlank()) {
+            panel.visibility = View.VISIBLE
+            output.text = "Copy an English or Korean message first."
+            button.text = "🇱🇰 Sinhala Translate"
+            return
+        }
+
+        if (source.length > 16000) {
+            panel.visibility = View.VISIBLE
+            output.text = "Message is too long (maximum 16000 characters)."
+            button.text = "🇱🇰 Sinhala Translate"
+            return
+        }
+
+        if (source == aiSinhalaSource && aiSinhalaResult != null) {
+            val show = panel.visibility != View.VISIBLE
+            panel.visibility = if (show) View.VISIBLE else View.GONE
+            button.text = if (show) {
+                "🇱🇰 Hide translation"
+            } else {
+                "🇱🇰 Show translation"
+            }
+            return
+        }
+
+        val prefs = getSharedPreferences("prefs", MODE_PRIVATE)
+        val provider = prefs.getString("ai_provider", "GroqCloud")
+            ?: "GroqCloud"
+        val model = prefs.getString("ai_model_$provider", "")
+            ?.trim().orEmpty()
+
+        if (provider != "GroqCloud" || model.isBlank()) {
+            panel.visibility = View.VISIBLE
+            output.text = "Select GroqCloud and set Model ID in AI Settings."
+            return
+        }
+
+        aiSinhalaJob?.cancel()
+        aiSinhalaSource = source
+        aiSinhalaResult = null
+
+        panel.visibility = View.VISIBLE
+        output.text = "Translating to Sinhala..."
+        button.text = "🇱🇰 Translating..."
+
+        aiSinhalaJob = serviceScope.launch {
+            try {
+                val translation = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    val key = unicode.sinhala.keyboard.ai.ApiKeyStore(
+                        this@InputMethodService
+                    ).load(provider) ?: error("No saved API Key")
+
+                    unicode.sinhala.keyboard.ai.AiSinhalaTranslator.translate(
+                        source, model, key
+                    )
+                }
+
+                if (aiSinhalaSource != source) return@launch
+
+                aiSinhalaResult = translation
+                output.text = translation
+                panel.visibility = View.VISIBLE
+                button.text = "🇱🇰 Hide translation"
+
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (aiSinhalaSource != source) return@launch
+                output.text = "Translation failed. Check API settings or connection."
+                button.text = "🇱🇰 Sinhala Translate"
+            }
+        }
+    }
+
     private fun showClipboardChip(text: String) {
         topBarController?.showClipboardSuggestion(text) { pastedText ->
             specialClick(pastedText)
@@ -234,6 +330,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 Prefs.getDarkTheme(this)
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
+            keyboardView.aiSinhalaButtonView.setOnClickListener {
+                onSinhalaTranslateTap()
+            }
+
             
             keyboardView.aiEnglishView.setOnClickListener {
                 onAiTranslationRowTap(true)
@@ -286,6 +386,14 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
+        aiSinhalaJob?.cancel()
+        aiSinhalaSource = null
+        aiSinhalaResult = null
+        if (::keyboardView.isInitialized) {
+            keyboardView.aiSinhalaPanelView.visibility = View.GONE
+            keyboardView.aiSinhalaButtonView.text = "🇱🇰 Sinhala Translate"
+        }
+
         aiTranslationJob?.cancel()
         aiTranslationSource = null
         aiTranslationEnglish = null
@@ -357,6 +465,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        aiSinhalaJob?.cancel()
+        aiSinhalaSource = null
+        aiSinhalaResult = null
+        if (::keyboardView.isInitialized) {
+            keyboardView.aiSinhalaPanelView.visibility = View.GONE
+        }
+
         aiTranslationJob?.cancel()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
         Log.d("IME", "onFinishInputView called finishingInput=$finishingInput")
