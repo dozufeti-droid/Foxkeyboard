@@ -2,7 +2,7 @@ name: Build Fox Keyboard APK
 
 on:
   push:
-    branches: [ai-translation]
+    branches: [ai-translation, helakuru-style-typing]
   workflow_dispatch:
 
 permissions:
