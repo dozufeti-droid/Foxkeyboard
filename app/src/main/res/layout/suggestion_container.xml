@@ -31,6 +31,7 @@
         android:layout_weight="1"
         android:tag="suggest_0"
         android:gravity="center"
+        android:textColor="?attr/foreground"
         android:textSize="14sp"
         android:visibility="gone" />
 
@@ -41,6 +42,7 @@
         android:layout_weight="1"
         android:tag="suggest_1"
         android:gravity="center"
+        android:textColor="?attr/foreground"
         android:textSize="14sp"
         android:visibility="gone" />
 
@@ -51,6 +53,7 @@
         android:layout_weight="1"
         android:tag="suggest_2"
         android:gravity="center"
+        android:textColor="?attr/foreground"
         android:textSize="14sp"
         android:visibility="gone" />
 
