@@ -455,7 +455,7 @@
                     android:tag="s1"
                     android:text="/"
                     android:visibility="gone"
-                    android.background="@drawable/key_background_function"/>
+                    android:background="@drawable/key_background_function"/>
 
                 <unicode.sinhala.keyboard.KeyboardButton
                     android:id="@+id/comma"

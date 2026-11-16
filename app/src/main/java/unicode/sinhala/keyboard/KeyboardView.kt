@@ -199,12 +199,9 @@ class KeyboardView(
     }
 
     init {
-        val style = when {
-            !darkTheme && keyBorders -> R.style.Light
-            !darkTheme && !keyBorders -> R.style.LightNoBorder
-            darkTheme && !keyBorders -> R.style.NightNoBorder
-            else -> R.style.Night
-        }
+        // Helakuru-inspired UI experiment: dark keys without individual borders.
+        // This branch is isolated; the original theme logic remains in backup.
+        val style = R.style.NightNoBorder
 
         val contextThemeWrapper = ContextThemeWrapper(context, style)
 
@@ -539,6 +536,14 @@ class KeyboardView(
         binding.lX.setSecondaryLabel(secondaryLabels?.get("x"))
         binding.lY.setSecondaryLabel(secondaryLabels?.get("y"))
         binding.lZ.setSecondaryLabel(secondaryLabels?.get("z"))
+    }
+
+    /** Numbers still have their own row in symbols and Wijesekara modes. */
+    fun setNumberRowVisible(visible: Boolean) {
+        val wanted = if (visible) View.VISIBLE else View.GONE
+        if (binding.keyRow1.visibility != wanted) {
+            binding.keyRow1.visibility = wanted
+        }
     }
 
     fun setNumberKeys(keyLabels: Map<String, String>) {

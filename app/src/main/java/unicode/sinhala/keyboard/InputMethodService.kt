@@ -1409,6 +1409,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
      }
 
     private fun updateKeyboard() {
+        // Match familiar compact phonetic/English layout; preserve symbols row.
+        keyboardView.setNumberRowVisible(
+            keyboardSymbolsActive || keyboardLayout == KeyboardLayout.WIJESEKARA
+        )
 
         if (keyboardSymbolsActive) {
             try {
@@ -1437,7 +1441,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 keyboardView.setLetterKeys(keySet)
                 keyboardView.setNumberKeys(keyLabelsNumbers)
                 keyboardView.setSpecialKeys(keyLabelsSpecialEnglish)
-                keyboardView.setSecondaryLabels(null)
+                keyboardView.setSecondaryLabels(
+                    listOf("q", "w", "e", "r", "t", "y", "u", "i", "o", "p")
+                        .zip(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0"))
+                        .toMap()
+                )
             }
 
             KeyboardLayout.WIJESEKARA -> {
