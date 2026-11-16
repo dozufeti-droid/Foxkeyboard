@@ -31,7 +31,7 @@ android {
     productFlavors {
         unicode {
             dimension = "app_id"
-            applicationId "unicode.sinhala.com"
+            applicationId "unicode.sinhala.com.ai"
         }
 
     }
