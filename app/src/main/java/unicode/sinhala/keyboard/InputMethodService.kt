@@ -1096,14 +1096,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         lastLetter = tLastLetter ?: singlishChar
         positionFlag = currentInputConnection.getTextBeforeCursor(5, 0)?.toString() ?: ""
 
-        // After committing singlish output, request suggestions for updated token
-        try {
-            val textBefore2 = currentInputConnection.getTextBeforeCursor(50, 0)?.toString() ?: ""
-            val token2 = textBefore2.takeLastWhile { !it.isWhitespace() }
-            requestSuggestionsForToken(token2)
-        } catch (t: Throwable) {
-            Log.w("IME", "failed to update suggestions after singlishInput", t)
-        }
+
     }
 
     private fun getSinglishChars(input: String): CHAR? = singlishMap[input]
