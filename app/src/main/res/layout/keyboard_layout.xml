@@ -11,6 +11,7 @@
     android:paddingTop="2dp"
     android:paddingBottom="8dp"
     tools:ignore="HardcodedText,ContentDescription">
+    <include android:id="@+id/ai_translation_rows" layout="@layout/ai_translation_rows" android:layout_width="match_parent" android:layout_height="wrap_content" />
 
     <LinearLayout
         android:id="@+id/top_bar"
