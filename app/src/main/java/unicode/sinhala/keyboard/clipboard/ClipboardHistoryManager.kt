@@ -65,8 +65,8 @@ object ClipboardHistoryManager {
 
                 items.add(ClipboardItem(id, text, timestamp, isPinned))
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
+        } catch (_: Exception) {
+            // Malformed clipboard history is ignored without logging private text.
         }
 
         if (needsSave) {

@@ -571,20 +571,19 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         }
         // Do not auto-hide suggestions on idle - only hide on explicit actions (space/action)
         debouncer?.onTyping(token, onTypingImmediate = { t ->
-            serviceScope.launch {
-                try {
-                    val sList = suggestionEngine?.suggest(Normalizer.normalize(t, Normalizer.Form.NFC), 3) ?: emptyList<String>()
-                    if (sList.isNotEmpty()) {
-                        topBarController?.showSuggestions(sList, suggestionTextViews) { suggestion ->
-                            onSuggestionClicked(suggestion)
-                        }
-                    } else {
-                        // Never leave an unrelated/stale dictionary suggestion visible.
-                        topBarController?.showNormal()
+            // Pure local lookup (<=500 words): avoid scheduling a coroutine per keypress.
+            try {
+                val sList = suggestionEngine?.suggest(Normalizer.normalize(t, Normalizer.Form.NFC), 3) ?: emptyList<String>()
+                if (sList.isNotEmpty()) {
+                    topBarController?.showSuggestions(sList, suggestionTextViews) { suggestion ->
+                        onSuggestionClicked(suggestion)
                     }
-                } catch (e: Exception) {
+                } else {
+                    // Never leave an unrelated/stale dictionary suggestion visible.
                     topBarController?.showNormal()
                 }
+            } catch (_: Exception) {
+                topBarController?.showNormal()
             }
         }, onIdle = null)
     }

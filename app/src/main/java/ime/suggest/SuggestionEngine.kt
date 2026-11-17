@@ -80,7 +80,7 @@ class SuggestionEngine(private val context: Context) {
     }
 
     // Only show the user's previously completed words, never arbitrary dictionary entries.
-    suspend fun suggest(prefix: String, limit: Int = 5): List<String> =
+    fun suggest(prefix: String, limit: Int = 5): List<String> =
         personalWords.suggestions(prefix, limit)
 
     fun recordAccepted(word: String, lang: LanguageDetector.Language) {

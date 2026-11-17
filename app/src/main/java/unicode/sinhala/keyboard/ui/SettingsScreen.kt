@@ -1,9 +1,7 @@
 package unicode.sinhala.keyboard.ui
 
 import android.content.Context
-import android.content.Intent
 import android.content.SharedPreferences
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,9 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import unicode.sinhala.com.BuildConfig
 import unicode.sinhala.com.R
-import unicode.sinhala.keyboard.DonateActivity
 import unicode.sinhala.keyboard.clipboard.ClipboardHistoryManager
 import unicode.sinhala.keyboard.ui.components.PreferenceItem
 import unicode.sinhala.keyboard.ui.components.SettingsCategory
@@ -161,30 +157,6 @@ fun SettingsScreen() {
                 ClipboardHistoryManager.clearAll(context)
                 Toast.makeText(context, "Clipboard history cleared", Toast.LENGTH_SHORT).show()
             }
-        )
-
-        SettingsCategory(title = "Support & About")
-
-        PreferenceItem(
-            title = "Buy Me a Coffee",
-            summary = "Support development",
-            onClick = {
-                context.startActivity(Intent(context, DonateActivity::class.java))
-            }
-        )
-
-        PreferenceItem(
-            title = "Source Code",
-            summary = "View on GitHub",
-            onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/xzunk/Foxkeyboard"))
-                context.startActivity(intent)
-            }
-        )
-
-        PreferenceItem(
-            title = "Version",
-            summary = BuildConfig.VERSION_NAME
         )
     }
 }

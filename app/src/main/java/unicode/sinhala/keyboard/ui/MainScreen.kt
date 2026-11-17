@@ -27,7 +27,7 @@ fun MainScreen(
         topBar = {
             if (isKeyboardEnabled && isKeyboardSelected) {
                 TopAppBar(
-                    title = { Text("Fox Keyboard") },
+                    title = { Text(stringResource(R.string.app_name)) },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.surface,
                         titleContentColor = MaterialTheme.colorScheme.onSurface
@@ -91,9 +91,9 @@ fun SetupScreen(
 
         Text(
             text = if (!isKeyboardEnabled) 
-                "Fox Keyboard is not enabled. Please enable it in settings to continue."
+                "D Key is not enabled. Please enable it in settings to continue."
             else 
-                "Fox Keyboard is enabled but not selected. Please select it to start typing.",
+                "D Key is enabled but not selected. Please select it to start typing.",
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 24.dp)
