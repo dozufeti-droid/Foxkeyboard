@@ -19,6 +19,7 @@ class SuggestionEngine(private val context: Context) {
     private val initialized = AtomicBoolean(false)
     private val englishTrie = Trie()
     private val sinhalaTrie = Trie()
+    private val personalWords = FoxPersonalDictionary(context)
 
     companion object {
         private const val TAG = "SuggestionEngine"
@@ -78,24 +79,20 @@ class SuggestionEngine(private val context: Context) {
         }
     }
 
-    suspend fun suggest(prefix: String, limit: Int = 5): List<String> {
-        if (!initialized.get()) initializeIfNeeded()
-
-        val cleanedPrefix = prefix.trim()
-        if (cleanedPrefix.isEmpty()) return emptyList()
-
-        return when (LanguageDetector.detectLanguage(cleanedPrefix)) {
-            LanguageDetector.Language.SINHALA -> {
-                sinhalaTrie.getByPrefix(cleanedPrefix, limit)
-            }
-            else -> {
-                englishTrie.getByPrefix(cleanedPrefix.lowercase(), limit)
-            }
-        }
-    }
+    // Only show the user's previously completed words, never arbitrary dictionary entries.
+    suspend fun suggest(prefix: String, limit: Int = 5): List<String> =
+        personalWords.suggestions(prefix, limit)
 
     fun recordAccepted(word: String, lang: LanguageDetector.Language) {
-        // Placeholder for future frequency-based ranking (privacy-safe, in-memory only)
+        personalWords.remember(word)
+    }
+
+    fun recordTypedWord(word: String) {
+        personalWords.remember(word)
+    }
+
+    fun flushTypedWords() {
+        personalWords.flush()
     }
 
     /**

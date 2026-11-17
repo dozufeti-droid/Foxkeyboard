@@ -757,7 +757,7 @@ class KeyboardView(
         binding.voiceLangBadge.text = label
         binding.voiceLangBadge.contentDescription = "Voice language: $languageName. Tap to choose."
         binding.voiceContainer.contentDescription =
-            "Voice typing ($languageName). Tap to start or stop; long press to select language."
+            "Voice typing ($languageName). Tap to start or stop."
     }
 
     // Only visual feedback; speech recognition and text handling stay in the service.

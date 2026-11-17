@@ -8,6 +8,8 @@ import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.widget.Toast
 import android.widget.PopupMenu
+import android.os.Handler
+import android.os.Looper
 
 import android.content.ClipboardManager
 import android.graphics.Color
@@ -96,6 +98,9 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private var foxVoiceRecognizer: SpeechRecognizer? = null
     private var foxVoiceListening = false
     private var foxVoiceLanguageOverride: String? = null
+    private val foxVoiceHandler = Handler(Looper.getMainLooper())
+    private var foxVoiceSession = 0
+    private var foxVoiceFailures = 0
 
     private var suggestionsEnabled = true
 
@@ -119,11 +124,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
 
         Log.d("IME", "onCreate called")
+        // Local suggestions do not need the old on-disk dictionary assets.
         suggestionEngine = SuggestionEngine(this)
-        // Initialize engine asynchronously
-        serviceScope.launch {
-            suggestionEngine?.initializeIfNeeded()
-        }
         debouncer = DebouncedInputHandler(serviceScope, 700L)
 
         // Remember the chosen dictation language without changing keyboard language.
@@ -141,6 +143,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         store.clear()
         super.onDestroy()
         serviceJob.cancel()
+        suggestionEngine?.flushTypedWords()
         Log.d("IME", "onDestroy called")
     }
 
@@ -361,10 +364,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
             keyboardView.voiceContainerView.setOnClickListener { startOrStopFoxVoiceTyping() }
-            keyboardView.voiceContainerView.setOnLongClickListener {
-                showFoxVoiceLanguageMenu()
-                true
-            }
+            // Completely separate touch target for changing the voice language.
+            keyboardView.voiceContainerView.setOnLongClickListener(null)
             keyboardView.voiceBadgeView.setOnClickListener { showFoxVoiceLanguageMenu() }
             refreshFoxVoiceBadge()
             keyboardView.aiSinhalaButtonView.setOnClickListener {
@@ -485,6 +486,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
+        // Never dictate into another field after focus changes.
+        if (foxVoiceListening) finishFoxVoiceRecognition()
         super.onStartInput(attribute, restarting)
         Log.d("IME", "onStartInput called restarting=$restarting")
 
@@ -530,10 +533,39 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         return false
     }
 
+    // FoxProVoiceLearning2026: learn completed words only when the editor permits it.
+    private fun foxCanLearnFromEditor(): Boolean {
+        val info = currentInputEditorInfo ?: return false
+        if ((info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return false
+        if ((info.inputType and InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS) != 0) return false
+        if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT) return false
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        return variation !in setOf(
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS,
+            InputType.TYPE_TEXT_VARIATION_URI
+        )
+    }
+
+    private fun rememberFoxCompletedWord() {
+        if (!foxCanLearnFromEditor()) return
+        val before = currentInputConnection?.getTextBeforeCursor(75, 0)
+            ?.toString().orEmpty()
+        val word = before.takeLastWhile { ch ->
+            val category = Character.getType(ch)
+            Character.isLetter(ch) || category == Character.NON_SPACING_MARK.toInt() ||
+                category == Character.COMBINING_SPACING_MARK.toInt()
+        }
+        if (word.isNotBlank()) suggestionEngine?.recordTypedWord(word)
+    }
+
     // Helper to request suggestions for a token
     private fun requestSuggestionsForToken(token: String) {
         // Do not auto-hide suggestions once opened. Only disable suggestions for password fields or when disabled in prefs.
-        if (!suggestionsEnabled || isInPasswordField()) {
+        if (!suggestionsEnabled || !foxCanLearnFromEditor()) {
             topBarController?.showNormal()
             return
         }
@@ -547,8 +579,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                             onSuggestionClicked(suggestion)
                         }
                     } else {
-                        // No suggestions found for this prefix. Do not automatically hide the suggestion bar per requirements.
-                        // Keep current suggestions visible.
+                        // Never leave an unrelated/stale dictionary suggestion visible.
+                        topBarController?.showNormal()
                     }
                 } catch (e: Exception) {
                     topBarController?.showNormal()
@@ -612,7 +644,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private fun showFoxVoiceLanguageMenu() {
         if (!::keyboardView.isInitialized) return
         try {
-            val menu = PopupMenu(keyboardView.context, keyboardView.voiceContainerView)
+            val menu = PopupMenu(keyboardView.context, keyboardView.voiceBadgeView)
             menu.menu.add(0, 1, 0, "🇱🇰 Sinhala")
             menu.menu.add(0, 2, 1, "🇬🇧 English")
             menu.menu.add(0, 3, 2, "🇰🇷 Korean")
@@ -623,11 +655,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                     3 -> "ko-KR"
                     else -> return@setOnMenuItemClickListener false
                 }
-                if (foxVoiceListening) finishFoxVoiceRecognition()
+                val resumeDictation = foxVoiceListening
+                if (resumeDictation) finishFoxVoiceRecognition()
                 foxVoiceLanguageOverride = language
                 getSharedPreferences("fox_voice_ui", android.content.Context.MODE_PRIVATE)
                     .edit().putString("language", language).apply()
                 refreshFoxVoiceBadge()
+                if (resumeDictation) startOrStopFoxVoiceTyping()
                 true
             }
             menu.show()
@@ -636,44 +670,80 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             Toast.makeText(this, "Could not open language menu", Toast.LENGTH_SHORT).show()
         }
     }
+    // FoxProVoiceLearning2026: mic tap alone controls the dictation session.
+    // Android recognizers stop at natural pauses. Start a fresh recognition round
+    // after each result / silence until the user explicitly taps the mic to stop.
     private fun finishFoxVoiceRecognition() {
         foxVoiceListening = false
+        foxVoiceSession += 1 // invalidate callbacks from earlier recognizers
+        foxVoiceHandler.removeCallbacksAndMessages(null)
         if (::keyboardView.isInitialized) keyboardView.setVoiceListening(false)
-        try { foxVoiceRecognizer?.destroy() } catch (_: Exception) { }
+        val old = foxVoiceRecognizer
         foxVoiceRecognizer = null
+        try { old?.cancel() } catch (_: Exception) { }
+        try { old?.destroy() } catch (_: Exception) { }
+    }
+
+    private fun foxCanDictate(): Boolean {
+        val info = currentInputEditorInfo ?: return false
+        val cls = info.inputType and InputType.TYPE_MASK_CLASS
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        return cls == InputType.TYPE_CLASS_TEXT && variation !in setOf(
+            InputType.TYPE_TEXT_VARIATION_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+        ) && currentInputConnection != null
     }
 
     private fun startOrStopFoxVoiceTyping() {
         if (foxVoiceListening) {
-            try { foxVoiceRecognizer?.stopListening() } catch (_: Exception) { finishFoxVoiceRecognition() }
+            finishFoxVoiceRecognition() // stop immediately; don't keep the mic open
             return
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             try {
-                startActivity(Intent(this, VoicePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                startActivity(Intent(this, VoicePermissionActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             } catch (e: Exception) {
                 Log.e("FoxVoice", "Could not request microphone permission", e)
-                Toast.makeText(this, "Enable microphone permission for Fox Keyboard", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Enable microphone permission", Toast.LENGTH_LONG).show()
             }
             return
         }
-        // Never start dictation in password or non-text fields.
-        val info = currentInputEditorInfo ?: return
-        val cls = info.inputType and InputType.TYPE_MASK_CLASS
-        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
-        if (cls != InputType.TYPE_CLASS_TEXT || variation in listOf(
-                InputType.TYPE_TEXT_VARIATION_PASSWORD,
-                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
-            )) {
-            Toast.makeText(this, "Voice typing is not available in this field", Toast.LENGTH_SHORT).show()
+        if (!foxCanDictate()) {
+            Toast.makeText(this, "Voice typing unavailable in this field", Toast.LENGTH_SHORT).show()
             return
         }
         if (!SpeechRecognizer.isRecognitionAvailable(this)) {
-            Toast.makeText(this, "No Android speech recognition service installed", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "No speech recognition service installed", Toast.LENGTH_LONG).show()
             return
         }
         finishFoxVoiceRecognition()
+        foxVoiceListening = true
+        foxVoiceSession += 1
+        foxVoiceFailures = 0
+        if (::keyboardView.isInitialized) keyboardView.setVoiceListening(true)
+        beginFoxVoiceRound(foxVoiceSession)
+    }
+
+    private fun scheduleFoxVoiceRound(session: Int, delay: Long) {
+        if (!foxVoiceListening || session != foxVoiceSession) return
+        foxVoiceHandler.postDelayed({
+            if (!foxVoiceListening || session != foxVoiceSession) return@postDelayed
+            val old = foxVoiceRecognizer
+            foxVoiceRecognizer = null
+            try { old?.destroy() } catch (_: Exception) { }
+            beginFoxVoiceRound(session)
+        }, delay)
+    }
+
+    private fun beginFoxVoiceRound(session: Int) {
+        if (!foxVoiceListening || session != foxVoiceSession) return
+        if (!isInputViewShown || !foxCanDictate() ||
+            checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            finishFoxVoiceRecognition()
+            return
+        }
         try {
             val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
             foxVoiceRecognizer = recognizer
@@ -686,34 +756,58 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 override fun onPartialResults(partialResults: Bundle?) { }
                 override fun onEvent(eventType: Int, params: Bundle?) { }
                 override fun onError(error: Int) {
-                    if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
-                        Toast.makeText(this@InputMethodService, "Voice recognition error: $error", Toast.LENGTH_SHORT).show()
+                    if (!foxVoiceListening || session != foxVoiceSession ||
+                        foxVoiceRecognizer !== recognizer) return
+                    when (error) {
+                        SpeechRecognizer.ERROR_NO_MATCH,
+                        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> {
+                            foxVoiceFailures = 0
+                            scheduleFoxVoiceRound(session, 800L)
+                        }
+                        SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+                        SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                        SpeechRecognizer.ERROR_NETWORK,
+                        SpeechRecognizer.ERROR_SERVER -> {
+                            foxVoiceFailures += 1
+                            if (foxVoiceFailures <= 3) {
+                                scheduleFoxVoiceRound(session, 1200L * foxVoiceFailures)
+                            } else {
+                                finishFoxVoiceRecognition()
+                                Toast.makeText(this@InputMethodService,
+                                    "Voice service unavailable. Try again.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        else -> {
+                            finishFoxVoiceRecognition()
+                            Toast.makeText(this@InputMethodService,
+                                "Voice typing stopped ($error)", Toast.LENGTH_SHORT).show()
+                        }
                     }
-                    finishFoxVoiceRecognition()
                 }
                 override fun onResults(results: Bundle?) {
+                    if (!foxVoiceListening || session != foxVoiceSession ||
+                        foxVoiceRecognizer !== recognizer) return
                     val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                         ?.firstOrNull()?.trim().orEmpty()
-                    if (spoken.isNotEmpty()) {
-                        // Write only into the currently focused editor; never transmit text to Gemini.
+                    if (spoken.isNotBlank() && foxCanDictate()) {
                         currentInputConnection?.commitText("$spoken ", 1)
                     }
-                    finishFoxVoiceRecognition()
+                    foxVoiceFailures = 0
+                    scheduleFoxVoiceRound(session, 420L)
                 }
             })
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                    RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, foxSpeechLanguage())
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             }
-            foxVoiceListening = true
-            keyboardView.setVoiceListening(true)
             recognizer.startListening(intent)
-            Toast.makeText(this, "Listening (${foxSpeechLanguage()})", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Log.e("FoxVoice", "Voice input unavailable", e)
+            Log.e("FoxVoice", "Could not restart speech recognition", e)
             finishFoxVoiceRecognition()
-            Toast.makeText(this, "Could not start voice typing", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Voice typing unavailable", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -1474,6 +1568,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun specialClick(tag: String) {
+        if (tag == " " || tag == "32") rememberFoxCompletedWord()
         val ic = currentInputConnection
         if (ic != null) {
             try {
