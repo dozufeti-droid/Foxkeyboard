@@ -1,147 +1,91 @@
 package ime.suggest
 
 import android.content.Context
-import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONArray
 import java.text.Normalizer
-import java.util.ArrayDeque
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.Locale
+import java.util.NavigableSet
+import java.util.TreeSet
 
-/**
- * Lightweight offline Suggestion Engine using Trie for fast prefix-based suggestions.
- * Supports English (case-insensitive) and Sinhala (Unicode NFC normalized).
- * Loads dictionaries from assets/english.json and assets/sinhala.json.
- */
+/** DKEY_TENK2026: 10k shipped words + up to 10k learned words, all offline. */
 class SuggestionEngine(private val context: Context) {
-
-    private val initialized = AtomicBoolean(false)
-    private val englishTrie = Trie()
-    private val sinhalaTrie = Trie()
     private val personalWords = FoxPersonalDictionary(context)
-
-    companion object {
-        private const val TAG = "SuggestionEngine"
-        private const val ENGLISH_FILE = "english.json"
-        private const val SINHALA_FILE = "sinhala.json"
-    }
+    @Volatile private var builtIn: NavigableSet<String> = TreeSet<String>()
+    @Volatile private var initialized = false
 
     suspend fun initializeIfNeeded() {
-        if (initialized.get()) return
-
+        if (initialized) return
         withContext(Dispatchers.IO) {
-            var englishLoaded = 0
-            var sinhalaLoaded = 0
-
+            if (initialized) return@withContext
+            val loaded = TreeSet<String>()
             try {
-                // Load English dictionary
-                context.assets.open(ENGLISH_FILE).use { stream ->
-                    val jsonText = stream.bufferedReader().use { it.readText() }
-                    val jsonArray = JSONArray(jsonText)
-
-                    for (i in 0 until jsonArray.length()) {
-                        val rawWord = jsonArray.optString(i) // safer than getString()
-                        val word = rawWord.trim().lowercase()
-                        if (word.isNotEmpty()) {
-                            englishTrie.insert(word)
-                            englishLoaded++
-                        }
+                context.assets.open("dkey_builtin_10000.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
+                    for (line in lines) {
+                        if (line.isBlank() || line.startsWith("#")) continue
+                        loaded.add(Normalizer.normalize(line.trim(), Normalizer.Form.NFC).lowercase(Locale.ROOT))
                     }
                 }
-                Log.d(TAG, "Loaded $englishLoaded English words")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to load English dictionary (normal in tests)", e)
+            } catch (_: Exception) {
+                // Keep personal suggestions available if bundled assets cannot be read.
             }
-
-            try {
-                // Load Sinhala dictionary
-                context.assets.open(SINHALA_FILE).use { stream ->
-                    val jsonText = stream.bufferedReader().use { it.readText() }
-                    val jsonArray = JSONArray(jsonText)
-
-                    for (i in 0 until jsonArray.length()) {
-                        val rawWord = jsonArray.optString(i)
-                        val normalized = Normalizer.normalize(rawWord.trim(), Normalizer.Form.NFC)
-                        if (normalized.isNotEmpty()) {
-                            sinhalaTrie.insert(normalized)
-                            sinhalaLoaded++
-                        }
-                    }
-                }
-                Log.d(TAG, "Loaded $sinhalaLoaded Sinhala words")
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to load Sinhala dictionary (normal in tests)", e)
-            }
-
-            initialized.set(true)
-            Log.i(TAG, "SuggestionEngine initialized successfully")
+            builtIn = loaded // Immutable after publication; no concurrent mutations.
+            initialized = true
         }
     }
 
-    // Only show the user's previously completed words, never arbitrary dictionary entries.
-    fun suggest(prefix: String, limit: Int = 5): List<String> =
-        personalWords.suggestions(prefix, limit)
+    fun suggest(prefix: String, limit: Int = 5): List<String> {
+        val key = Normalizer.normalize(prefix.trim(), Normalizer.Form.NFC).lowercase(Locale.ROOT)
+        if (key.isEmpty() || key.length > 32 || limit <= 0 || key.any { it.isWhitespace() })
+            return emptyList()
+        val max = limit.coerceIn(1, 8)
+        val learned = personalWords.suggestions(key, max)
+        if (learned.size >= max) return learned
+        val others = ArrayList<String>()
+        val iterator = builtIn.tailSet(key, true).iterator()
+        // Bound candidate work per keypress; never search every one of the 10,000 words.
+        while (iterator.hasNext() && others.size < 96) {
+            val word = iterator.next()
+            if (!word.startsWith(key)) break
+            if (word != key && word !in learned) others.add(word)
+        }
+        others.sortWith(compareBy<String> { it.length }.thenBy { it })
+        return learned + others.take(max - learned.size)
+    }
 
     fun recordAccepted(word: String, lang: LanguageDetector.Language) {
         personalWords.remember(word)
     }
-
     fun recordTypedWord(word: String) {
         personalWords.remember(word)
     }
+    fun flushTypedWords() { personalWords.flush() }
 
-    fun flushTypedWords() {
-        personalWords.flush()
-    }
-
-    /**
-     * Efficient Trie with BFS for shortest + alphabetical suggestions
-     */
+    /** Keep the legacy nested Trie API available for any existing callers/tests. */
     class Trie {
-        private val root = Node()
-
         private class Node {
-            val children: MutableMap<Char, Node> = LinkedHashMap() // preserves insertion order → alphabetical
-            var isWord: Boolean = false
+            val children: MutableMap<Char, Node> = LinkedHashMap()
+            var isWord = false
         }
-
+        private val root = Node()
         fun insert(word: String) {
-            var current = root
-            for (char in word) {
-                current = current.children.getOrPut(char) { Node() }
-            }
-            current.isWord = true
+            var at = root
+            for (ch in word) at = at.children.getOrPut(ch) { Node() }
+            at.isWord = true
         }
-
         fun getByPrefix(prefix: String, limit: Int): List<String> {
-            val results = mutableListOf<String>()
-            var current = root
-
-            // Traverse to the prefix end
-            for (char in prefix) {
-                val node = current.children[char] ?: return results // no matches
-                current = node
+            if (limit <= 0) return emptyList()
+            var at = root
+            for (ch in prefix) at = at.children[ch] ?: return emptyList()
+            val result = ArrayList<String>()
+            val queue = java.util.ArrayDeque<Pair<Node, String>>()
+            queue.add(at to prefix)
+            while (queue.isNotEmpty() && result.size < limit) {
+                val (node, text) = queue.removeFirst()
+                if (node.isWord) result.add(text)
+                for ((ch, child) in node.children) queue.add(child to (text + ch))
             }
-
-            // BFS to get shortest words first, alphabetical due to LinkedHashMap
-            val queue = ArrayDeque<Pair<Node, String>>()
-            queue.add(current to prefix)
-
-            while (queue.isNotEmpty() && results.size < limit) {
-                val (node, currentWord) = queue.poll()
-
-                if (node.isWord) {
-                    results.add(currentWord)
-                }
-
-                // Add children in alphabetical order
-                for ((char, childNode) in node.children) {
-                    queue.add(childNode to (currentWord + char))
-                }
-            }
-
-            return results
+            return result
         }
     }
 }

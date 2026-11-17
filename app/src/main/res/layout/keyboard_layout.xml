@@ -47,22 +47,8 @@
             android:padding="8dp"
             android:background="?android:selectableItemBackground"
             android:contentDescription="Emoji" />
-        <!-- Separate full-height language button: it cannot overlap the mic. -->
-        <TextView
-            android:id="@+id/voice_lang_badge"
-            android:layout_width="40dp"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:includeFontPadding="false"
-            android:text="සි"
-            android:textColor="#FFFFFF"
-            android:textSize="13sp"
-            android:textStyle="bold"
-            android:background="@drawable/fox_voice_badge_bg"
-            android:clickable="true"
-            android:focusable="true"
-            android:contentDescription="Select voice language" />
-        <!-- Mic button is independent: tap = start/stop. -->
+        <!-- Mic controls both dictation and language selection. -->
+<!-- Mic button is independent: tap = start/stop. -->
         <FrameLayout
             android:id="@+id/voice_container"
             android:layout_width="44dp"
@@ -70,7 +56,7 @@
             android:background="?android:selectableItemBackground"
             android:clickable="true"
             android:focusable="true"
-            android:longClickable="false"
+            android:longClickable="true"
             android:contentDescription="Voice typing. Tap to start or stop">
             <View
                 android:id="@+id/voice_pulse_ring"
@@ -86,6 +72,24 @@
                 android:layout_height="match_parent"
                 android:src="@drawable/ic_fox_voice_mic"
                 android:padding="9dp"
+                android:importantForAccessibility="no" />
+            <!-- Small non-interactive badge INSIDE the existing mic touch target. -->
+            <TextView
+                android:id="@+id/voice_lang_badge"
+                android:layout_width="22dp"
+                android:layout_height="17dp"
+                android:layout_gravity="bottom|end"
+                android:layout_marginEnd="2dp"
+                android:layout_marginBottom="1dp"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="සි"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:background="@drawable/fox_voice_badge_bg"
+                android:clickable="false"
+                android:focusable="false"
                 android:importantForAccessibility="no" />
         </FrameLayout>
 

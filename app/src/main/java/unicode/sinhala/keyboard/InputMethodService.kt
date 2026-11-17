@@ -126,6 +126,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         Log.d("IME", "onCreate called")
         // Local suggestions do not need the old on-disk dictionary assets.
         suggestionEngine = SuggestionEngine(this)
+        // DKEY_TENK2026: parse the 10k shipped words off the keyboard UI thread.
+        serviceScope.launch(Dispatchers.IO) { suggestionEngine?.initializeIfNeeded() }
         debouncer = DebouncedInputHandler(serviceScope, 700L)
 
         // Remember the chosen dictation language without changing keyboard language.
@@ -364,9 +366,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
             keyboardView.voiceContainerView.setOnClickListener { startOrStopFoxVoiceTyping() }
-            // Completely separate touch target for changing the voice language.
-            keyboardView.voiceContainerView.setOnLongClickListener(null)
-            keyboardView.voiceBadgeView.setOnClickListener { showFoxVoiceLanguageMenu() }
+            // DKEY_TENK2026: no separate language button; hold the mic to choose.
+            keyboardView.voiceContainerView.setOnLongClickListener {
+                showFoxVoiceLanguageMenu()
+                true
+            }
             refreshFoxVoiceBadge()
             keyboardView.aiSinhalaButtonView.setOnClickListener {
                 onSinhalaTranslateTap()
@@ -550,8 +554,12 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         )
     }
 
+    private fun foxShouldLearnFromEditor(): Boolean =
+        foxCanLearnFromEditor() && getSharedPreferences("prefs", MODE_PRIVATE)
+            .getBoolean("dkey_personal_learning", true)
+
     private fun rememberFoxCompletedWord() {
-        if (!foxCanLearnFromEditor()) return
+        if (!foxShouldLearnFromEditor()) return
         val before = currentInputConnection?.getTextBeforeCursor(75, 0)
             ?.toString().orEmpty()
         val word = before.takeLastWhile { ch ->
@@ -643,7 +651,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private fun showFoxVoiceLanguageMenu() {
         if (!::keyboardView.isInitialized) return
         try {
-            val menu = PopupMenu(keyboardView.context, keyboardView.voiceBadgeView)
+            val menu = PopupMenu(keyboardView.context, keyboardView.voiceContainerView)
             menu.menu.add(0, 1, 0, "🇱🇰 Sinhala")
             menu.menu.add(0, 2, 1, "🇬🇧 English")
             menu.menu.add(0, 3, 2, "🇰🇷 Korean")
@@ -1013,10 +1021,12 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         ic.commitText(suggestion, 1)
         // append a space? Do not append automatically — keep behavior stable
 
-        // record acceptance
-        serviceScope.launch {
-            val lang = LanguageDetector.detectLanguage(suggestion)
-            suggestionEngine?.recordAccepted(suggestion, lang)
+        // DKEY_TENK2026: never learn in private fields or when opted out.
+        if (foxShouldLearnFromEditor()) {
+            serviceScope.launch {
+                val lang = LanguageDetector.detectLanguage(suggestion)
+                suggestionEngine?.recordAccepted(suggestion, lang)
+            }
         }
 
         // Do NOT hide suggestions here; per user request keep suggestion bar open until explicit Action or Space is pressed.

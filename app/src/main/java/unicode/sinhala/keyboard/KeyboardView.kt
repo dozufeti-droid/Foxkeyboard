@@ -773,9 +773,9 @@ class KeyboardView(
 
     fun updateVoiceLanguageBadge(label: String, languageName: String) {
         binding.voiceLangBadge.text = label
-        binding.voiceLangBadge.contentDescription = "Voice language: $languageName. Tap to choose."
+        binding.voiceLangBadge.contentDescription = "Voice language: $languageName."
         binding.voiceContainer.contentDescription =
-            "Voice typing ($languageName). Tap to start or stop."
+            "Voice typing ($languageName). Tap to start or stop; long press to select language."
     }
 
     // Only visual feedback; speech recognition and text handling stay in the service.

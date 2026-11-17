@@ -56,65 +56,80 @@ fun SetupScreen(
     onEnableKeyboard: () -> Unit,
     onSelectKeyboard: () -> Unit
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+    // DKEY_TENK2026: center the LOGO itself, not the tall content column.
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().padding(horizontal = 32.dp, vertical = 24.dp)
     ) {
-        // Use R.drawable.ic_launcher_foreground instead of mipmap resource which might be causing issues
-        // or just use a generic icon if that fails. For now, assuming ic_launcher_foreground exists 
-        // as it is referenced in ic_launcher.xml
-        Image(
-            painter = painterResource(id = R.drawable.ic_launcher_foreground),
-            contentDescription = null,
-            modifier = Modifier
-                .size(120.dp)
-                .padding(bottom = 24.dp)
-        )
-
-        Text(
-            text = stringResource(id = R.string.app_name),
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Text(
-            text = "Version ${BuildConfig.VERSION_NAME}",
-            fontSize = 14.sp,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 64.dp)
-        )
-
-        Text(
-            text = if (!isKeyboardEnabled) 
-                "D Key is not enabled. Please enable it in settings to continue."
-            else 
-                "D Key is enabled but not selected. Please select it to start typing.",
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
-        Button(
-            onClick = {
-                if (!isKeyboardEnabled) {
-                    onEnableKeyboard()
-                } else {
-                    onSelectKeyboard()
+        val compact = maxHeight < 560.dp
+        if (compact) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Image(
+                    painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                    contentDescription = "D Key logo",
+                    modifier = Modifier.size(84.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(text = stringResource(id = R.string.app_name), fontSize = 28.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onBackground)
+                Text(text = "Version ${BuildConfig.VERSION_NAME}", fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = if (!isKeyboardEnabled)
+                        "D Key is not enabled. Please enable it in settings to continue."
+                    else "D Key is enabled but not selected. Please select it to start typing.",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = {
+                    if (!isKeyboardEnabled) onEnableKeyboard() else onSelectKeyboard()
+                }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                    Text(text = if (!isKeyboardEnabled) "Enable Keyboard" else "Select Keyboard")
                 }
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(50.dp)
-        ) {
-            Text(
-                text = if (!isKeyboardEnabled) "Enable Keyboard" else "Select Keyboard",
-                fontSize = 16.sp
+            }
+        } else {
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                contentDescription = "D Key logo",
+                modifier = Modifier.align(Alignment.Center)
+                    .size(if (maxHeight < 680.dp) 96.dp else 120.dp)
             )
+            Column(
+                modifier = Modifier.align(Alignment.Center)
+                    .offset(y = if (maxHeight < 680.dp) 96.dp else 110.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(text = stringResource(id = R.string.app_name), fontSize = 28.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onBackground)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(text = "Version ${BuildConfig.VERSION_NAME}", fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = if (!isKeyboardEnabled)
+                        "D Key is not enabled. Please enable it in settings to continue."
+                    else "D Key is enabled but not selected. Please select it to start typing.",
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(onClick = {
+                    if (!isKeyboardEnabled) onEnableKeyboard() else onSelectKeyboard()
+                }, modifier = Modifier.fillMaxWidth().height(50.dp)) {
+                    Text(text = if (!isKeyboardEnabled) "Enable Keyboard" else "Select Keyboard")
+                }
+            }
         }
     }
 }

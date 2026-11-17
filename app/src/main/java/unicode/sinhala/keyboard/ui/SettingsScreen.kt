@@ -8,6 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import ime.suggest.FoxPersonalDictionary
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -23,6 +27,20 @@ fun SettingsScreen() {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
     var showAiSettings by remember { mutableStateOf(false) }
+    var confirmClearLearned by remember { mutableStateOf(false) }
+    if (confirmClearLearned) {
+        AlertDialog(
+            onDismissRequest = { confirmClearLearned = false },
+            title = { Text("Clear learned words?") },
+            text = { Text("This removes your personal learned words. Built-in words stay available.") },
+            confirmButton = { TextButton(onClick = {
+                FoxPersonalDictionary.clearAll(context)
+                confirmClearLearned = false
+                Toast.makeText(context, "Learned words cleared", Toast.LENGTH_SHORT).show()
+            }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { confirmClearLearned = false }) { Text("Cancel") } }
+        )
+    }
     if (showAiSettings) {
         AiSettingsScreen(onBack = { showAiSettings = false })
         return
@@ -133,6 +151,21 @@ fun SettingsScreen() {
             summary = "Vibrate briefly on key presses",
             checked = vibration.value,
             onCheckedChange = { vibration.value = it }
+        )
+
+        // DKEY_TENK2026: privacy controls for user-learned local words.
+        SettingsCategory(title = "Smart Suggestions")
+        val learning = rememberBooleanPreference(context, "dkey_personal_learning", true)
+        SwitchPreference(
+            title = "Personal Word Learning",
+            summary = "Remember completed words locally (up to 10,000)",
+            checked = learning.value,
+            onCheckedChange = { learning.value = it }
+        )
+        PreferenceItem(
+            title = "Clear Learned Words",
+            summary = "Remove your personal words without affecting the built-in dictionary",
+            onClick = { confirmClearLearned = true }
         )
 
         SettingsCategory(title = "Smart Clipboard")
