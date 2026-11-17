@@ -47,6 +47,14 @@
             android:padding="8dp"
             android:background="?android:selectableItemBackground"
             android:contentDescription="Emoji" />
+        <ImageView
+            android:id="@+id/btn_voice"
+            android:layout_width="40dp"
+            android:layout_height="match_parent"
+            android:src="@drawable/ic_fox_voice_mic"
+            android:padding="8dp"
+            android:background="?android:selectableItemBackground"
+            android:contentDescription="Voice typing. Long press to choose language" />
 
     </LinearLayout>
 

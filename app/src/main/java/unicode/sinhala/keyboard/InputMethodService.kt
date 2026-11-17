@@ -1,4 +1,12 @@
 package unicode.sinhala.keyboard
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Bundle
+import android.speech.RecognitionListener
+import android.speech.RecognizerIntent
+import android.speech.SpeechRecognizer
+import android.widget.Toast
 
 import android.content.ClipboardManager
 import android.graphics.Color
@@ -83,6 +91,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private var debouncer: DebouncedInputHandler? = null
     private var topBarController: TopBarController? = null
     private var suggestionTextViews: List<TextView> = emptyList()
+    // Android system speech service, not Gemini. User starts and stops microphone explicitly.
+    private var foxVoiceRecognizer: SpeechRecognizer? = null
+    private var foxVoiceListening = false
+    private var foxVoiceLanguageOverride: String? = null
+
     private var suggestionsEnabled = true
 
     // Lifecycle and SavedStateRegistry support
@@ -116,7 +129,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         registerClipboardListener()
     }
 
+    override fun onFinishInputView(finishingInput: Boolean) {
+        finishFoxVoiceRecognition()
+        super.onFinishInputView(finishingInput)
+    }
+
     override fun onDestroy() {
+        finishFoxVoiceRecognition()
         unregisterClipboardListener()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
@@ -341,6 +360,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 Prefs.getDarkTheme(this)
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
+            keyboardView.voiceButtonView.setOnClickListener { startOrStopFoxVoiceTyping() }
+            keyboardView.voiceButtonView.setOnLongClickListener {
+                cycleFoxVoiceLanguage()
+                true
+            }
             keyboardView.aiSinhalaButtonView.setOnClickListener {
                 onSinhalaTranslateTap()
             }
@@ -559,6 +583,106 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
 
+
+
+    // Mic: tap to start/stop. Long-press cycles Sinhala -> English -> Korean.
+    private fun foxSpeechLanguage(): String = foxVoiceLanguageOverride ?: when (keyboardLayout) {
+        KeyboardLayout.ENGLISH -> "en-US"
+        else -> "si-LK"
+    }
+
+    private fun cycleFoxVoiceLanguage() {
+        val choices = listOf("si-LK", "en-US", "ko-KR")
+        val current = foxSpeechLanguage()
+        foxVoiceLanguageOverride = choices[(choices.indexOf(current).takeIf { it >= 0 } ?: -1).let { (it + 1) % choices.size }]
+        val description = when (foxVoiceLanguageOverride) {
+            "si-LK" -> "Sinhala"
+            "ko-KR" -> "Korean"
+            else -> "English"
+        }
+        Toast.makeText(this, "Voice language: $description", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun finishFoxVoiceRecognition() {
+        foxVoiceListening = false
+        if (::keyboardView.isInitialized) keyboardView.voiceButtonView.alpha = 1.0f
+        try { foxVoiceRecognizer?.destroy() } catch (_: Exception) { }
+        foxVoiceRecognizer = null
+    }
+
+    private fun startOrStopFoxVoiceTyping() {
+        if (foxVoiceListening) {
+            try { foxVoiceRecognizer?.stopListening() } catch (_: Exception) { finishFoxVoiceRecognition() }
+            return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            try {
+                startActivity(Intent(this, VoicePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (e: Exception) {
+                Log.e("FoxVoice", "Could not request microphone permission", e)
+                Toast.makeText(this, "Enable microphone permission for Fox Keyboard", Toast.LENGTH_LONG).show()
+            }
+            return
+        }
+        // Never start dictation in password or non-text fields.
+        val info = currentInputEditorInfo ?: return
+        val cls = info.inputType and InputType.TYPE_MASK_CLASS
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        if (cls != InputType.TYPE_CLASS_TEXT || variation in listOf(
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+            )) {
+            Toast.makeText(this, "Voice typing is not available in this field", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            Toast.makeText(this, "No Android speech recognition service installed", Toast.LENGTH_LONG).show()
+            return
+        }
+        finishFoxVoiceRecognition()
+        try {
+            val recognizer = SpeechRecognizer.createSpeechRecognizer(this)
+            foxVoiceRecognizer = recognizer
+            recognizer.setRecognitionListener(object : RecognitionListener {
+                override fun onReadyForSpeech(params: Bundle?) { }
+                override fun onBeginningOfSpeech() { }
+                override fun onRmsChanged(rmsdB: Float) { }
+                override fun onBufferReceived(buffer: ByteArray?) { }
+                override fun onEndOfSpeech() { }
+                override fun onPartialResults(partialResults: Bundle?) { }
+                override fun onEvent(eventType: Int, params: Bundle?) { }
+                override fun onError(error: Int) {
+                    if (error != SpeechRecognizer.ERROR_NO_MATCH && error != SpeechRecognizer.ERROR_SPEECH_TIMEOUT) {
+                        Toast.makeText(this@InputMethodService, "Voice recognition error: $error", Toast.LENGTH_SHORT).show()
+                    }
+                    finishFoxVoiceRecognition()
+                }
+                override fun onResults(results: Bundle?) {
+                    val spoken = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                        ?.firstOrNull()?.trim().orEmpty()
+                    if (spoken.isNotEmpty()) {
+                        // Write only into the currently focused editor; never transmit text to Gemini.
+                        currentInputConnection?.commitText("$spoken ", 1)
+                    }
+                    finishFoxVoiceRecognition()
+                }
+            })
+            val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_LANGUAGE, foxSpeechLanguage())
+                putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            }
+            foxVoiceListening = true
+            keyboardView.voiceButtonView.alpha = 0.45f
+            recognizer.startListening(intent)
+            Toast.makeText(this, "Listening (${foxSpeechLanguage()})", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Log.e("FoxVoice", "Voice input unavailable", e)
+            finishFoxVoiceRecognition()
+            Toast.makeText(this, "Could not start voice typing", Toast.LENGTH_LONG).show()
+        }
+    }
 
     private fun onAiTranslationRowTap(english: Boolean) {
         val source = aiTranslationSource

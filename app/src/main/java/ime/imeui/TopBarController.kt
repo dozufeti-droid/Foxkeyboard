@@ -19,7 +19,7 @@ class TopBarController(
         if (darkTheme) {
             tv.setTextColor(Color.WHITE)
         } else {
-            tv.setTextColor(Color.BLACK)
+            tv.setTextColor(Color.WHITE)
         }
     }
 
