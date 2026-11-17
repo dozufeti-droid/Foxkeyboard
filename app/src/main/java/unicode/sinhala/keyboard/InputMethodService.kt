@@ -129,10 +129,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         registerClipboardListener()
     }
 
-    override fun onFinishInputView(finishingInput: Boolean) {
-        finishFoxVoiceRecognition()
-        super.onFinishInputView(finishingInput)
-    }
 
     override fun onDestroy() {
         finishFoxVoiceRecognition()
@@ -499,6 +495,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        finishFoxVoiceRecognition()
         super.onFinishInputView(finishingInput)
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
