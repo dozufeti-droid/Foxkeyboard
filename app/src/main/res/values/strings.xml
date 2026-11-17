@@ -1,9 +1,10 @@
 <resources>
-    <string name="app_name">Fox Keyboard</string>
-    <string name="app_name_si">Fox Keyboard</string>
+    <string name="app_name">Damith AI Keyboard</string>
+    <string name="app_name_si">Damith AI Keyboard</string>
     <string name="wijesekara">විජේසේකර</string>
     <string name="singlish">සිංග්‍රීසි</string>
     <string name="backspace">Backspace</string>
     <string name="app_name1">Sinhala Keyboard</string>
     <string name="app_name_si1">සිංහල</string>
+    <string name="fox_signature">Powered by Damith Wijekoon</string>
 </resources>

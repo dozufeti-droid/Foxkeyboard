@@ -1,6 +1,9 @@
 package unicode.sinhala.keyboard
 
 import android.annotation.SuppressLint
+import android.animation.AnimatorSet
+import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Color
 import android.util.Log
@@ -745,6 +748,80 @@ class KeyboardView(
     val topBarView: LinearLayout get() = binding.topBar
     val emojiButtonView: ImageView get() = binding.btnEmoji
     val voiceButtonView: ImageView get() = binding.btnVoice
+    val voiceContainerView: View get() = binding.voiceContainer
+    val voiceBadgeView: TextView get() = binding.voiceLangBadge
+    private var foxMicAnimation: AnimatorSet? = null
+    private var foxMicVisualActive = false
+
+    fun updateVoiceLanguageBadge(label: String, languageName: String) {
+        binding.voiceLangBadge.text = label
+        binding.voiceLangBadge.contentDescription = "Voice language: $languageName. Tap to choose."
+        binding.voiceContainer.contentDescription =
+            "Voice typing ($languageName). Tap to start or stop; long press to select language."
+    }
+
+    // Only visual feedback; speech recognition and text handling stay in the service.
+    fun setVoiceListening(listening: Boolean) {
+        if (foxMicVisualActive == listening) return
+        foxMicVisualActive = listening
+        foxMicAnimation?.cancel()
+        foxMicAnimation = null
+        val mic = binding.btnVoice
+        val ring = binding.voicePulseRing
+        mic.scaleX = 1f
+        mic.scaleY = 1f
+        mic.alpha = 1f
+        mic.clearColorFilter()
+        ring.visibility = View.GONE
+        ring.scaleX = 1f
+        ring.scaleY = 1f
+        ring.alpha = 1f
+        if (!listening) return
+
+        ring.visibility = View.VISIBLE
+        val micX = ObjectAnimator.ofFloat(mic, View.SCALE_X, 1f, 1.18f, 1f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+        }
+        val micY = ObjectAnimator.ofFloat(mic, View.SCALE_Y, 1f, 1.18f, 1f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+        }
+        val ringX = ObjectAnimator.ofFloat(ring, View.SCALE_X, 0.84f, 1.18f, 0.84f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+        }
+        val ringY = ObjectAnimator.ofFloat(ring, View.SCALE_Y, 0.84f, 1.18f, 0.84f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+        }
+        val ringAlpha = ObjectAnimator.ofFloat(ring, View.ALPHA, 0.35f, 1f, 0.35f).apply {
+            duration = 900L
+            repeatCount = ValueAnimator.INFINITE
+        }
+        // Cyan -> purple -> pink -> mint -> cyan; no GIF or external library.
+        val micColor = ValueAnimator.ofArgb(
+            Color.rgb(62, 213, 244),
+            Color.rgb(169, 106, 255),
+            Color.rgb(255, 112, 179),
+            Color.rgb(55, 235, 172),
+            Color.rgb(62, 213, 244)
+        ).apply {
+            duration = 3200L
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener { mic.setColorFilter(it.animatedValue as Int) }
+        }
+        foxMicAnimation = AnimatorSet().apply {
+            playTogether(micX, micY, ringX, ringY, ringAlpha, micColor)
+            start()
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        setVoiceListening(false)
+        super.onDetachedFromWindow()
+    }
+
     val clipboardButtonView: ImageView get() = binding.btnClipboard
     val numpadActionView: ImageView get() = binding.numpadView.numAction
     // suggestionContainer in the binding is a generated binding object; use its root view when a View is expected

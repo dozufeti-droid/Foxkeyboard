@@ -7,6 +7,7 @@ import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.widget.Toast
+import android.widget.PopupMenu
 
 import android.content.ClipboardManager
 import android.graphics.Color
@@ -125,6 +126,9 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         }
         debouncer = DebouncedInputHandler(serviceScope, 700L)
 
+        // Remember the chosen dictation language without changing keyboard language.
+        foxVoiceLanguageOverride = getSharedPreferences("fox_voice_ui", android.content.Context.MODE_PRIVATE)
+            .getString("language", null)?.takeIf { it in listOf("si-LK", "en-US", "ko-KR") }
         EmojiData.loadRecentEmojis(this)
         registerClipboardListener()
     }
@@ -356,11 +360,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 Prefs.getDarkTheme(this)
             )
             suggestionTextViews = keyboardView.getSuggestionTextViews()
-            keyboardView.voiceButtonView.setOnClickListener { startOrStopFoxVoiceTyping() }
-            keyboardView.voiceButtonView.setOnLongClickListener {
-                cycleFoxVoiceLanguage()
+            keyboardView.voiceContainerView.setOnClickListener { startOrStopFoxVoiceTyping() }
+            keyboardView.voiceContainerView.setOnLongClickListener {
+                showFoxVoiceLanguageMenu()
                 true
             }
+            keyboardView.voiceBadgeView.setOnClickListener { showFoxVoiceLanguageMenu() }
+            refreshFoxVoiceBadge()
             keyboardView.aiSinhalaButtonView.setOnClickListener {
                 onSinhalaTranslateTap()
             }
@@ -582,27 +588,57 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
 
-    // Mic: tap to start/stop. Long-press cycles Sinhala -> English -> Korean.
+    // Mic: tap to start/stop, long-press to choose language.
     private fun foxSpeechLanguage(): String = foxVoiceLanguageOverride ?: when (keyboardLayout) {
         KeyboardLayout.ENGLISH -> "en-US"
         else -> "si-LK"
     }
 
-    private fun cycleFoxVoiceLanguage() {
-        val choices = listOf("si-LK", "en-US", "ko-KR")
-        val current = foxSpeechLanguage()
-        foxVoiceLanguageOverride = choices[(choices.indexOf(current).takeIf { it >= 0 } ?: -1).let { (it + 1) % choices.size }]
-        val description = when (foxVoiceLanguageOverride) {
+    private fun refreshFoxVoiceBadge() {
+        if (!::keyboardView.isInitialized) return
+        val language = foxSpeechLanguage()
+        val label = when (language) {
+            "si-LK" -> "සි"
+            "ko-KR" -> "한"
+            else -> "EN"
+        }
+        val name = when (language) {
             "si-LK" -> "Sinhala"
             "ko-KR" -> "Korean"
             else -> "English"
         }
-        Toast.makeText(this, "Voice language: $description", Toast.LENGTH_SHORT).show()
+        keyboardView.updateVoiceLanguageBadge(label, name)
     }
-
+    private fun showFoxVoiceLanguageMenu() {
+        if (!::keyboardView.isInitialized) return
+        try {
+            val menu = PopupMenu(keyboardView.context, keyboardView.voiceContainerView)
+            menu.menu.add(0, 1, 0, "🇱🇰 Sinhala")
+            menu.menu.add(0, 2, 1, "🇬🇧 English")
+            menu.menu.add(0, 3, 2, "🇰🇷 Korean")
+            menu.setOnMenuItemClickListener { item ->
+                val language = when (item.itemId) {
+                    1 -> "si-LK"
+                    2 -> "en-US"
+                    3 -> "ko-KR"
+                    else -> return@setOnMenuItemClickListener false
+                }
+                if (foxVoiceListening) finishFoxVoiceRecognition()
+                foxVoiceLanguageOverride = language
+                getSharedPreferences("fox_voice_ui", android.content.Context.MODE_PRIVATE)
+                    .edit().putString("language", language).apply()
+                refreshFoxVoiceBadge()
+                true
+            }
+            menu.show()
+        } catch (error: Exception) {
+            Log.e("FoxVoice", "Unable to show voice language popup", error)
+            Toast.makeText(this, "Could not open language menu", Toast.LENGTH_SHORT).show()
+        }
+    }
     private fun finishFoxVoiceRecognition() {
         foxVoiceListening = false
-        if (::keyboardView.isInitialized) keyboardView.voiceButtonView.alpha = 1.0f
+        if (::keyboardView.isInitialized) keyboardView.setVoiceListening(false)
         try { foxVoiceRecognizer?.destroy() } catch (_: Exception) { }
         foxVoiceRecognizer = null
     }
@@ -671,7 +707,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
             }
             foxVoiceListening = true
-            keyboardView.voiceButtonView.alpha = 0.45f
+            keyboardView.setVoiceListening(true)
             recognizer.startListening(intent)
             Toast.makeText(this, "Listening (${foxSpeechLanguage()})", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
@@ -1562,6 +1598,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
      }
 
     private fun updateKeyboard() {
+        if (::keyboardView.isInitialized) refreshFoxVoiceBadge()
         // Match familiar compact phonetic/English layout; preserve symbols row.
         keyboardView.setNumberRowVisible(
             keyboardSymbolsActive || keyboardLayout == KeyboardLayout.WIJESEKARA

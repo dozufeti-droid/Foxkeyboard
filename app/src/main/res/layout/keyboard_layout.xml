@@ -47,14 +47,48 @@
             android:padding="8dp"
             android:background="?android:selectableItemBackground"
             android:contentDescription="Emoji" />
-        <ImageView
-            android:id="@+id/btn_voice"
-            android:layout_width="40dp"
+        <!-- Full-size touch target; badge stays visible and ring pulses while listening. -->
+        <FrameLayout
+            android:id="@+id/voice_container"
+            android:layout_width="44dp"
             android:layout_height="match_parent"
-            android:src="@drawable/ic_fox_voice_mic"
-            android:padding="8dp"
             android:background="?android:selectableItemBackground"
-            android:contentDescription="Voice typing. Long press to choose language" />
+            android:clickable="true"
+            android:focusable="true"
+            android:longClickable="true"
+            android:contentDescription="Voice typing. Long press to select language">
+            <View
+                android:id="@+id/voice_pulse_ring"
+                android:layout_width="34dp"
+                android:layout_height="34dp"
+                android:layout_gravity="center"
+                android:background="@drawable/fox_voice_pulse_ring"
+                android:visibility="gone"
+                android:importantForAccessibility="no" />
+            <ImageView
+                android:id="@+id/btn_voice"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:src="@drawable/ic_fox_voice_mic"
+                android:padding="9dp"
+                android:importantForAccessibility="no" />
+            <TextView
+                android:id="@+id/voice_lang_badge"
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:layout_gravity="end|bottom"
+                android:layout_marginEnd="1dp"
+                android:layout_marginBottom="1dp"
+                android:gravity="center"
+                android:includeFontPadding="false"
+                android:text="සි"
+                android:textColor="#FFFFFF"
+                android:textSize="9sp"
+                android:textStyle="bold"
+                android:background="@drawable/fox_voice_badge_bg"
+                android:clickable="true"
+                android:contentDescription="Choose voice typing language" />
+        </FrameLayout>
 
     </LinearLayout>
 
@@ -516,7 +550,28 @@
             </LinearLayout>
         </LinearLayout>
 
-        <include
+                <!-- Decoration within the EXISTING keyboard FrameLayout; no extra row or padding. -->
+        <!-- Drawn over the keys but receives no touches, keeping all hit targets unchanged. -->
+        <unicode.sinhala.keyboard.FoxColorSignature
+            android:id="@+id/fox_color_signature"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:gravity="center"
+            android:background="@android:color/transparent"
+            android:text="@string/fox_signature"
+            android:textColor="#40D9FF"
+            android:textSize="11sp"
+            android:letterSpacing="0.035"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:includeFontPadding="false"
+            android:alpha="0.10"
+            android:clickable="false"
+            android:longClickable="false"
+            android:focusable="false"
+            android:importantForAccessibility="no" />
+
+<include
             android:id="@+id/emoji_view"
             layout="@layout/emoji_layout"
             android:visibility="gone" />
