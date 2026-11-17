@@ -551,24 +551,6 @@
 
                 <!-- Decoration within the EXISTING keyboard FrameLayout; no extra row or padding. -->
         <!-- Drawn over the keys but receives no touches, keeping all hit targets unchanged. -->
-        <unicode.sinhala.keyboard.FoxColorSignature
-            android:id="@+id/fox_color_signature"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:gravity="center"
-            android:background="@android:color/transparent"
-            android:text="@string/fox_signature"
-            android:textColor="#40D9FF"
-            android:textSize="11sp"
-            android:letterSpacing="0.035"
-            android:singleLine="true"
-            android:ellipsize="end"
-            android:includeFontPadding="false"
-            android:alpha="0.10"
-            android:clickable="false"
-            android:longClickable="false"
-            android:focusable="false"
-            android:importantForAccessibility="no" />
 
 <include
             android:id="@+id/emoji_view"

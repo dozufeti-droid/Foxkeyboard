@@ -229,6 +229,24 @@ class KeyboardView(
             }
         }
 
+        // foxNoResizeBrandingOverlay2026: decorative view MUST NOT be a measured child.
+        // The drawing lives in keyboardRows.overlay, which cannot increase the IME height
+        // and does not intercept touches. This preserves every original key hit target.
+        val foxSignatureOverlay = FoxColorSignature(contextThemeWrapper)
+        var foxSignatureOverlayAdded = false
+        binding.keyboardRows.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
+            val drawWidth = right - left
+            val drawHeight = bottom - top
+            if (drawWidth > 0 && drawHeight > 0) {
+                if (!foxSignatureOverlayAdded) {
+                    binding.keyboardRows.overlay.add(foxSignatureOverlay)
+                    foxSignatureOverlayAdded = true
+                }
+                if (foxSignatureOverlay.width != drawWidth || foxSignatureOverlay.height != drawHeight) {
+                    foxSignatureOverlay.layout(0, 0, drawWidth, drawHeight)
+                }
+            }
+        }
         // Full key-cell touch targets, with no separate letter tile visuals.
         // Match the supplied screenshot's charcoal background (#273238).
         val flatBackground = Color.rgb(39, 50, 56)
