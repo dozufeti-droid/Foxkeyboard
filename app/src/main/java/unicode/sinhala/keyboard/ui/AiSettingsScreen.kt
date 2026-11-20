@@ -33,7 +33,8 @@ fun AiSettingsScreen(onBack: () -> Unit) {
     val providers = listOf(
         "GroqCloud",
         "Google Gemini",
-        "OpenRouter"
+        "OpenRouter",
+        "Google Web Translate"
     )
 
     var model by remember(provider) { mutableStateOf(prefs.getString("ai_model_$provider", "") ?: "") }
@@ -90,18 +91,26 @@ fun AiSettingsScreen(onBack: () -> Unit) {
         }
 
         Text("Selected: $provider")
-        AiKeyControls(provider)
-        OutlinedTextField(
-            value = model,
-            onValueChange = { value ->
-                model = value
-                prefs.edit().putString("ai_model_$provider", value).apply()
-            },
-            label = { Text("Model ID") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        AiConnectionControls(provider, model)
+        // Google Web Translate does not need a paid API key or model ID.
+        // All existing provider keys/models remain saved and are untouched.
+        if (provider == "Google Web Translate") {
+            Text("No API key or billing required (unofficial Google web service).")
+            Text("Tap English/Korean translation on the keyboard for one-click replacement.")
+            Text("This service can stop working or be rate-limited by Google.")
+        } else {
+            AiKeyControls(provider)
+            OutlinedTextField(
+                value = model,
+                onValueChange = { value ->
+                    model = value
+                    prefs.edit().putString("ai_model_$provider", value).apply()
+                },
+                label = { Text("Model ID") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            AiConnectionControls(provider, model)
+        }
 
 
     }

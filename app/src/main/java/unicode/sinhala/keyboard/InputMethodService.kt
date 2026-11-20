@@ -245,7 +245,14 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         val model = prefs.getString("ai_model_$provider", "")
             ?.trim().orEmpty()
 
-        if (provider !in setOf("GroqCloud", "Google Gemini") || model.isBlank()) {
+        if (provider == "Google Web Translate" &&
+            source.length > unicode.sinhala.keyboard.ai.GoogleWebTranslateProvider.MAX_CHARS) {
+            panel.visibility = View.VISIBLE
+            output.text = "Google Web: message too long (2500 characters maximum)."
+            return
+        }
+        if (provider != "Google Web Translate" &&
+            (provider !in setOf("GroqCloud", "Google Gemini") || model.isBlank())) {
             panel.visibility = View.VISIBLE
             output.text = "Select GroqCloud or Google Gemini and set Model ID in AI Settings."
             return
@@ -262,13 +269,19 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         aiSinhalaJob = serviceScope.launch {
             try {
                 val translation = kotlinx.coroutines.withContext(Dispatchers.IO) {
-                    val key = unicode.sinhala.keyboard.ai.ApiKeyStore(
-                        this@InputMethodService
-                    ).load(provider) ?: error("No saved API Key")
+                    if (provider == "Google Web Translate") {
+                        unicode.sinhala.keyboard.ai.GoogleWebTranslateProvider.translate(
+                            source, target = "si", source = "auto"
+                        )
+                    } else {
+                        val key = unicode.sinhala.keyboard.ai.ApiKeyStore(
+                            this@InputMethodService
+                        ).load(provider) ?: error("No saved API Key")
 
-                    unicode.sinhala.keyboard.ai.AiSinhalaTranslator.translate(
-                        source, model, key, provider
-                    )
+                        unicode.sinhala.keyboard.ai.AiSinhalaTranslator.translate(
+                            source, model, key, provider
+                        )
+                    }
                 }
 
                 if (aiSinhalaSource != source) return@launch
@@ -284,6 +297,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 if (aiSinhalaSource != source) return@launch
                 val reason = e.message.orEmpty()
                 output.text = when {
+                    provider == "Google Web Translate" ->
+                        "Google Web translation unavailable. Retry or select an AI provider."
                     reason.contains("rate limit", true) || reason.contains("HTTP 429") ->
                         "Gemini free limit reached. Try later."
                     reason.contains("server error", true) || reason.contains("HTTP 50") ->
@@ -818,7 +833,105 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         }
     }
 
+    /**
+     * One click while Google Web Translate is selected: translate then replace
+     * the selected text, or the last line before the cursor. Never auto-send.
+     * Typed text goes to Google's unofficial translation endpoint ONLY on tap.
+     */
+    private fun onGoogleWebTranslationTap(target: String) {
+        val info = currentInputEditorInfo ?: return
+        val editor = currentInputConnection ?: return
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        val allowed = variation == InputType.TYPE_TEXT_VARIATION_NORMAL ||
+            variation == InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE ||
+            variation == InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE ||
+            variation == InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT
+        val row = if (target == "en") keyboardView.aiEnglishView
+            else keyboardView.aiKoreanView
+        val flag = if (target == "en") "🇬🇧" else "🇰🇷"
+        if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT ||
+            !allowed ||
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
+            row.text = "$flag Unavailable in this field"
+            return
+        }
+        val selectedText = editor.getSelectedText(0)?.toString()?.takeIf { it.isNotBlank() }
+        val sourceText = selectedText ?: editor.getTextBeforeCursor(
+            unicode.sinhala.keyboard.ai.GoogleWebTranslateProvider.MAX_CHARS + 1, 0
+        )?.toString()?.substringAfterLast('\n').orEmpty()
+        val trimmedText = sourceText.trim()
+        if (trimmedText.isEmpty()) {
+            row.text = "$flag Enter a message first"
+            return
+        }
+        if (sourceText.length > unicode.sinhala.keyboard.ai.GoogleWebTranslateProvider.MAX_CHARS) {
+            row.text = "$flag Message too long for Google Web"
+            return
+        }
+        aiTranslationJob?.cancel()
+        aiTranslationSource = null
+        aiTranslationEnglish = null
+        aiTranslationKorean = null
+        row.text = "$flag Translating..."
+        aiTranslationJob = serviceScope.launch {
+            try {
+                val result = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                    unicode.sinhala.keyboard.ai.GoogleWebTranslateProvider.translate(
+                        trimmedText, target = target, source = "auto"
+                    )
+                }
+                // Never replace a message if the app, editor or draft changed.
+                if (currentInputEditorInfo !== info || currentInputConnection !== editor ||
+                    getSharedPreferences("prefs", MODE_PRIVATE)
+                        .getString("ai_provider", "GroqCloud") != "Google Web Translate") {
+                    return@launch
+                }
+                val active = currentInputConnection ?: return@launch
+                if (selectedText != null) {
+                    if (active.getSelectedText(0)?.toString() != selectedText) {
+                        row.text = "$flag Text changed — translate again"
+                        return@launch
+                    }
+                } else {
+                    val before = active.getTextBeforeCursor(sourceText.length, 0)
+                        ?.toString().orEmpty()
+                    if (before != sourceText) {
+                        row.text = "$flag Text changed — translate again"
+                        return@launch
+                    }
+                }
+                active.beginBatchEdit()
+                try {
+                    if (selectedText == null) {
+                        active.deleteSurroundingText(sourceText.length, 0)
+                    }
+                    active.commitText(result, 1)
+                } finally {
+                    active.endBatchEdit()
+                }
+                row.text = "$flag ${result.take(75)}"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (currentInputEditorInfo !== info) return@launch
+                row.text = when {
+                    e.message?.contains("429") == true -> "$flag Google rate limit — try later"
+                    e is java.net.SocketTimeoutException -> "$flag Google timed out — retry"
+                    else -> "$flag Google Web unavailable — try AI provider"
+                }
+            }
+        }
+    }
+
     private fun onAiTranslationRowTap(english: Boolean) {
+        // Only the newly selected Google provider uses the one-click flow.
+        // GroqCloud, Gemini, OpenRouter and saved API keys are unaffected.
+        val activeProvider = getSharedPreferences("prefs", MODE_PRIVATE)
+            .getString("ai_provider", "GroqCloud")
+        if (activeProvider == "Google Web Translate") {
+            onGoogleWebTranslationTap(if (english) "en" else "ko")
+            return
+        }
         val source = aiTranslationSource
         val translated = if (english) {
             aiTranslationEnglish
