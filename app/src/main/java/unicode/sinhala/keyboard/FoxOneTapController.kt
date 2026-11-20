@@ -7,6 +7,8 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.TextView
+import android.widget.Toast
+import android.os.SystemClock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,10 +31,16 @@ class FoxOneTapController(
     private val currentEditor: () -> InputConnection?
 ) {
     private var job: Job? = null
+    // Only the last successful copied-message result, in memory, scoped to the
+    // current input field. This is cleared when IME switches editors; no disk IO.
+    private var lastSinhalaSource: String? = null
+    private var lastSinhalaResult: String? = null
 
     fun cancel() {
         job?.cancel()
         job = null
+        lastSinhalaSource = null
+        lastSinhalaResult = null
     }
 
     fun translateDraft(target: String, row: TextView) {
@@ -52,7 +60,6 @@ class FoxOneTapController(
             return
         }
         if (job?.isActive == true) {
-            row.text = "$flag Translating..."
             return // do not send two concurrent copies of the same chat
         }
         val selected = editor.getSelectedText(0)?.toString()?.takeIf { it.isNotBlank() }
@@ -72,7 +79,8 @@ class FoxOneTapController(
             row.text = "$flag Finish the Singlish sentence first"
             return
         }
-        row.text = "$flag Translating..."
+        row.text = "$flag …"
+        val startedMs = SystemClock.elapsedRealtime()
         job = scope.launch {
             try {
                 val translated = withContext(Dispatchers.IO) {
@@ -95,21 +103,22 @@ class FoxOneTapController(
                     if (selected == null) editor.deleteSurroundingText(original.length, 0)
                     editor.commitText(translated, 1)
                 } finally { editor.endBatchEdit() }
-                row.text = "$flag ✓ ${translated.take(70)}"
+                val elapsed = (SystemClock.elapsedRealtime() - startedMs) / 1000.0
+                row.text = "$flag ✓ %.1fs".format(java.util.Locale.US, elapsed)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 if (currentInfo() !== info || currentEditor() !== editor) return@launch
-                row.text = errorLabel(flag, e)
+                row.text = "$flag Retry"
+                Toast.makeText(context, errorLabel(flag, e), Toast.LENGTH_LONG).show()
             }
         }
     }
 
     fun translateClipboardToSinhala(button: TextView, panel: View, output: TextView) {
-        if (job?.isActive == true) {
-            button.text = "🇱🇰 Translating..."
-            return
-        }
+        if (job?.isActive == true) return
+        val originInfo = currentInfo() ?: return
+        val originEditor = currentEditor() ?: return
         val copied = try {
             (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
                 ?.primaryClip?.takeIf { it.itemCount > 0 }
@@ -126,14 +135,23 @@ class FoxOneTapController(
             output.text = "Quick translation max 2000 characters. Disable V6 quick mode for longer messages."
             return
         }
+        if (copied == lastSinhalaSource && lastSinhalaResult != null) {
+            panel.visibility = if (panel.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+            output.text = lastSinhalaResult
+            button.text = "🇱🇰 Sinhala"
+            return // instant show/hide of this field's last translation
+        }
         panel.visibility = View.VISIBLE
-        output.text = "Translating to Sinhala..."
-        button.text = "🇱🇰 Translating..."
+        output.text = "Translating to Sinhala…"
+        button.text = "🇱🇰 …"
+        val startedMs = SystemClock.elapsedRealtime()
         job = scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
                     FoxQuickTranslator.translate(context, copied, "si")
                 }
+                // Never display a copied message in another app/editor.
+                if (currentInfo() !== originInfo || currentEditor() !== originEditor) return@launch
                 // If user changed clipboard while translating, never display
                 // the returned text as though it translated the new clipboard.
                 val nowCopied = try {
@@ -143,16 +161,20 @@ class FoxOneTapController(
                 } catch (_: Exception) { null }
                 if (nowCopied != copied) {
                     output.text = "Clipboard changed. Tap to translate again."
-                    button.text = "🇱🇰 Sinhala Translate"
+                    button.text = "🇱🇰 Sinhala"
                     return@launch
                 }
+                lastSinhalaSource = copied
+                lastSinhalaResult = result
                 output.text = result
-                button.text = "🇱🇰 Sinhala Translate"
+                val elapsed = (SystemClock.elapsedRealtime() - startedMs) / 1000.0
+                button.text = "🇱🇰 ✓ %.1fs".format(java.util.Locale.US, elapsed)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                if (currentInfo() !== originInfo || currentEditor() !== originEditor) return@launch
                 output.text = errorLabel("🇱🇰", e)
-                button.text = "🇱🇰 Sinhala Translate"
+                button.text = "🇱🇰 Retry"
             }
         }
     }
@@ -161,7 +183,7 @@ class FoxOneTapController(
         val message = error.message.orEmpty()
         return when {
             error is SinhalaScriptException ->
-                "🇱🇰 Sinhala output contained mixed letters twice. Retry this message."
+                "🇱🇰 AI returned mixed-language text twice. Original kept; retry."
             message.contains("429") -> "$flag AI rate limit; retry later"
             message.contains("HTTP 401") || message.contains("HTTP 403") ->
                 "$flag API key or permissions rejected; check AI Settings"

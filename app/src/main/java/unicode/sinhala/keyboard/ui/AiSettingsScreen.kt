@@ -107,12 +107,10 @@ fun AiSettingsScreen(onBack: () -> Unit) {
             }
         }
 
-        Text("Selected: $provider")
-
         HorizontalDivider()
-        Text("⚡ One-tap Translate · English / Korean / Sinhala",
+        Text("⚡ One-tap Translate",
             style = MaterialTheme.typography.titleMedium)
-        Text("Tap a language button once. Translation replaces the original draft only if it has not changed. Sinhala displays a copied message's meaning.")
+        Text("One tap: English/Korean replace the draft; Sinhala translates copied text.")
         Row {
             Switch(checked = quickEnabled, onCheckedChange = { value ->
                 quickEnabled = value
@@ -122,7 +120,7 @@ fun AiSettingsScreen(onBack: () -> Unit) {
             Text(if (quickEnabled) "One-tap ON" else "Old translation mode")
         }
         if (quickEnabled) {
-            Text("One-tap engine (choose once, not for every message)")
+            Text("Translation engine")
             Box {
                 OutlinedButton(onClick = { quickExpanded = true }) {
                     Text(quickEngine + "  ▼")
@@ -139,7 +137,7 @@ fun AiSettingsScreen(onBack: () -> Unit) {
                     }
                 }
             }
-            Text("For natural Sinhala/Singlish and Korean, choose Gemini or GroqCloud with your saved API key. Google Web can rate-limit or mistranslate colloquial Sinhala.")
+            Text("For Sinhala quality, use Gemini or GroqCloud. Offline is EN ↔ KO only.")
             if (quickEngine == FoxQuickTranslator.OFFLINE) {
                 Text("Offline is only for English ↔ Korean. Sinhala/Singlish requires an online provider.")
             }
@@ -162,10 +160,7 @@ fun AiSettingsScreen(onBack: () -> Unit) {
         // Google Web Translate does not need a paid API key or model ID.
         // All existing provider keys/models remain saved and are untouched.
         if (provider == "Google Web Translate") {
-            Text("No API key or billing required (unofficial Google web service).")
-            Text("Tap English/Korean translation on the keyboard for one-click replacement.")
-            Text("Long-press a translation row to open the WM-style Translate tool.")
-            Text("This service can stop working or be rate-limited by Google.")
+            Text("Unofficial Google Web: no key, but may rate-limit or mistranslate Sinhala.")
             var fallback by remember {
                 mutableStateOf(prefs.getString("wm_online_fallback", "Off") ?: "Off")
             }

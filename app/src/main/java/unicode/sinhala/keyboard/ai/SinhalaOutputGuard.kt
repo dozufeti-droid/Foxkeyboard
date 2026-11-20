@@ -19,11 +19,15 @@ internal object SinhalaOutputGuard {
         var index = 0
         while (index < translation.length) {
             val codePoint = Character.codePointAt(translation, index)
-            if (Character.isLetter(codePoint)) {
-                // Includes the entire Sinhala Unicode block. Reject every
-                // other script, including Latin (romanized Sinhala).
+            val characterType = Character.getType(codePoint)
+            val isCombiningMark = characterType == Character.NON_SPACING_MARK.toInt() ||
+                characterType == Character.COMBINING_SPACING_MARK.toInt() ||
+                characterType == Character.ENCLOSING_MARK.toInt()
+            if (Character.isLetter(codePoint) || isCombiningMark) {
+                // Reject foreign letters AND diacritics; Sinhala vowel signs
+                // and virama remain valid because they belong to this block.
                 if (codePoint !in 0x0D80..0x0DFF) return false
-                containsSinhalaLetter = true
+                if (Character.isLetter(codePoint)) containsSinhalaLetter = true
             }
             // Reject right-to-left direction overrides/isolate markers.
             if (codePoint in 0x202A..0x202E || codePoint in 0x2066..0x2069) {

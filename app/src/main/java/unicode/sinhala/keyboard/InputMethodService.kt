@@ -486,7 +486,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         aiSinhalaResult = null
         if (::keyboardView.isInitialized) {
             keyboardView.aiSinhalaPanelView.visibility = View.GONE
-            keyboardView.aiSinhalaButtonView.text = "🇱🇰 Sinhala Translate"
+            keyboardView.aiSinhalaButtonView.text = "🇱🇰 Sinhala"
         }
 
         aiTranslationJob?.cancel()
@@ -494,8 +494,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         aiTranslationEnglish = null
         aiTranslationKorean = null
         if (::keyboardView.isInitialized) {
-            keyboardView.aiEnglishView.text = "🇬🇧 English translation"
-            keyboardView.aiKoreanView.text = "🇰🇷 Korean translation"
+            keyboardView.aiEnglishView.text = "🇬🇧 English"
+            keyboardView.aiKoreanView.text = "🇰🇷 Korean"
         }
          lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
          Log.d("IME", "onStartInputView called restarting=$restarting info=")
