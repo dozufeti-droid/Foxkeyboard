@@ -14,6 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import unicode.sinhala.keyboard.ai.FoxQuickTranslator
+import unicode.sinhala.keyboard.ai.SinhalaScriptException
 import unicode.sinhala.keyboard.ai.SinglishTranslationHints
 
 /**
@@ -159,13 +160,22 @@ class FoxOneTapController(
     private fun errorLabel(flag: String, error: Exception): String {
         val message = error.message.orEmpty()
         return when {
-            message.contains("429") -> "$flag Rate limit; choose saved AI provider"
-            error is java.net.SocketTimeoutException -> "$flag Slow connection; retry or use Offline"
-            message.contains("model", ignoreCase = true) ||
-                message.contains("API key", ignoreCase = true) -> "$flag Check AI Settings / offline models"
+            error is SinhalaScriptException ->
+                "🇱🇰 Sinhala output contained mixed letters twice. Retry this message."
+            message.contains("429") -> "$flag AI rate limit; retry later"
+            message.contains("HTTP 401") || message.contains("HTTP 403") ->
+                "$flag API key or permissions rejected; check AI Settings"
+            message.contains("HTTP 404") ->
+                "$flag Selected AI model unavailable; check Model ID"
+            message.contains("HTTP 50") -> "$flag AI service busy; retry"
+            error is java.net.SocketTimeoutException -> "$flag Connection timed out; retry"
+            message.contains("API key", ignoreCase = true) ->
+                "$flag API key missing; check AI Settings"
+            message.contains("Model ID", ignoreCase = true) ->
+                "$flag Model ID missing; check AI Settings"
             message.contains("conflict", ignoreCase = true) -> "$flag Meaning unclear; rephrase"
             message.contains("already", ignoreCase = true) -> "$flag Already translated"
-            else -> "$flag Translation failed; check AI Settings"
+            else -> "$flag Translation unavailable; retry"
         }
     }
 }

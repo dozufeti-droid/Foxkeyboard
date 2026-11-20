@@ -19,8 +19,8 @@ android {
     }
 
     buildTypes {
-        // Separate V6.1 debug app; V5, V6 and stable app are untouched.
-        debug { applicationIdSuffix ".v61test" }
+        // Separate V6.2 debug app; V5, V6, V6.1 and stable app are untouched.
+        debug { applicationIdSuffix ".v62test" }
         release {
             minifyEnabled true
             shrinkResources true

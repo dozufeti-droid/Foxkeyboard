@@ -7,6 +7,11 @@ package unicode.sinhala.keyboard.ai
  *
  * This is a SCRIPT check, not a guarantee of semantic correctness.
  */
+/** Distinguish rejected output from missing API keys, models or offline assets. */
+internal class SinhalaScriptException : IllegalStateException(
+    "Sinhala output had mixed writing systems after one correction attempt"
+)
+
 internal object SinhalaOutputGuard {
     fun isValid(translation: String, original: String): Boolean {
         if (translation.isBlank()) return false
