@@ -9,6 +9,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import unicode.sinhala.keyboard.ai.FoxQuickTranslator
+import unicode.sinhala.keyboard.ai.WmTranslationEngine
 
 @Composable
 fun AiSettingsScreen(onBack: () -> Unit) {
@@ -38,6 +43,18 @@ fun AiSettingsScreen(onBack: () -> Unit) {
     )
 
     var model by remember(provider) { mutableStateOf(prefs.getString("ai_model_$provider", "") ?: "") }
+    var quickEnabled by remember {
+        mutableStateOf(prefs.getBoolean("wm_fast_one_tap_enabled", true))
+    }
+    var quickEngine by remember {
+        mutableStateOf(prefs.getString("wm_one_tap_provider", FoxQuickTranslator.FOLLOW)
+            ?: FoxQuickTranslator.FOLLOW)
+    }
+    var quickExpanded by remember { mutableStateOf(false) }
+    var offlineStatus by remember { mutableStateOf("") }
+    val coroutineScope = rememberCoroutineScope()
+    val quickEngines = listOf(FoxQuickTranslator.FOLLOW, "GroqCloud", "Google Gemini",
+        "Google Web Translate", FoxQuickTranslator.OFFLINE)
 
     Column(
         modifier = Modifier
@@ -91,6 +108,57 @@ fun AiSettingsScreen(onBack: () -> Unit) {
         }
 
         Text("Selected: $provider")
+
+        HorizontalDivider()
+        Text("⚡ One-tap Translate · English / Korean / Sinhala",
+            style = MaterialTheme.typography.titleMedium)
+        Text("Tap a language button once. Translation replaces the original draft only if it has not changed. Sinhala displays a copied message's meaning.")
+        Row {
+            Switch(checked = quickEnabled, onCheckedChange = { value ->
+                quickEnabled = value
+                prefs.edit().putBoolean("wm_fast_one_tap_enabled", value).apply()
+            })
+            Spacer(Modifier.width(12.dp))
+            Text(if (quickEnabled) "One-tap ON" else "Old translation mode")
+        }
+        if (quickEnabled) {
+            Text("One-tap engine (choose once, not for every message)")
+            Box {
+                OutlinedButton(onClick = { quickExpanded = true }) {
+                    Text(quickEngine + "  ▼")
+                }
+                DropdownMenu(expanded = quickExpanded, onDismissRequest = {
+                    quickExpanded = false
+                }) {
+                    quickEngines.forEach { engine ->
+                        DropdownMenuItem(text = { Text(engine) }, onClick = {
+                            quickEngine = engine
+                            prefs.edit().putString("wm_one_tap_provider", engine).apply()
+                            quickExpanded = false
+                        })
+                    }
+                }
+            }
+            Text("For natural Sinhala/Singlish and Korean, choose Gemini or GroqCloud with your saved API key. Google Web can rate-limit or mistranslate colloquial Sinhala.")
+            if (quickEngine == FoxQuickTranslator.OFFLINE) {
+                Text("Offline is only for English ↔ Korean. Sinhala/Singlish requires an online provider.")
+            }
+            OutlinedButton(onClick = {
+                offlineStatus = "Downloading EN/KO models..."
+                coroutineScope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            WmTranslationEngine.downloadEnglishKoreanModels()
+                        }
+                        offlineStatus = "English/Korean models ready for Offline one-tap"
+                    } catch (e: Exception) {
+                        offlineStatus = "Download failed. Check internet and available storage."
+                    }
+                }
+            }) { Text("↓ Download EN ↔ KO Offline Models") }
+            if (offlineStatus.isNotBlank()) Text(offlineStatus)
+        }
+        HorizontalDivider()
         // Google Web Translate does not need a paid API key or model ID.
         // All existing provider keys/models remain saved and are untouched.
         if (provider == "Google Web Translate") {

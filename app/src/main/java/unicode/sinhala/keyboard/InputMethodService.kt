@@ -77,6 +77,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
+    // One-tap English/Korean replacement + copied-message Sinhala translation.
+    // Existing keyboard UI, voice and AI providers are not replaced.
+    private val foxOneTapController by lazy {
+        FoxOneTapController(this, serviceScope,
+            currentInfo = { currentInputEditorInfo },
+            currentEditor = { currentInputConnection })
+    }
 
 
     private var aiTranslationJob: Job? = null
@@ -204,6 +211,15 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
     private fun onSinhalaTranslateTap() {
+        if (getSharedPreferences("prefs", MODE_PRIVATE)
+                .getBoolean("wm_fast_one_tap_enabled", true)) {
+            foxOneTapController.translateClipboardToSinhala(
+                keyboardView.aiSinhalaButtonView,
+                keyboardView.aiSinhalaPanelView,
+                keyboardView.aiSinhalaTextView
+            )
+            return
+        }
         val panel = keyboardView.aiSinhalaPanelView
         val output = keyboardView.aiSinhalaTextView
         val button = keyboardView.aiSinhalaButtonView
@@ -464,6 +480,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
         closeWmTranslationTool()
+        foxOneTapController.cancel()
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
         aiSinhalaResult = null
@@ -546,6 +563,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     override fun onFinishInputView(finishingInput: Boolean) {
         finishFoxVoiceRecognition()
         closeWmTranslationTool()
+        foxOneTapController.cancel()
         super.onFinishInputView(finishingInput)
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
@@ -1089,6 +1107,14 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     private fun onAiTranslationRowTap(english: Boolean) {
+        if (getSharedPreferences("prefs", MODE_PRIVATE)
+                .getBoolean("wm_fast_one_tap_enabled", true)) {
+            foxOneTapController.translateDraft(
+                if (english) "en" else "ko",
+                if (english) keyboardView.aiEnglishView else keyboardView.aiKoreanView
+            )
+            return
+        }
         // Only the newly selected Google provider uses the one-click flow.
         // GroqCloud, Gemini, OpenRouter and saved API keys are unaffected.
         val activeProvider = getSharedPreferences("prefs", MODE_PRIVATE)

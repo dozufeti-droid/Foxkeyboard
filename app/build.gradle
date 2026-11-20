@@ -19,8 +19,8 @@ android {
     }
 
     buildTypes {
-        // Separate debug app for safe phone testing. Release ID unchanged.
-        debug { applicationIdSuffix ".v5test" }
+        // Separate V6 debug app; V5 and the stable keyboard are untouched.
+        debug { applicationIdSuffix ".v6test" }
         release {
             minifyEnabled true
             shrinkResources true

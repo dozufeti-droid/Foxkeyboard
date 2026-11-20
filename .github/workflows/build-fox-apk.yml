@@ -2,7 +2,7 @@ name: Build Fox Keyboard APK
 
 on:
   push:
-    branches: [ai-translation, helakuru-style-typing, feature/google-web-translate-v2, feature/en-ko-hybrid-v5]
+    branches: [ai-translation, helakuru-style-typing, feature/google-web-translate-v2, feature/en-ko-hybrid-v5, feature/fox-one-tap-v6]
   workflow_dispatch:
 
 permissions:

@@ -32,6 +32,11 @@ data class WmTranslationResult(val text: String, val via: String)
  */
 object WmTranslationEngine {
 
+    // V6 fast path: do not download or silently call online services in one-tap
+    // Offline mode. Users download EN/KO packs explicitly first.
+    suspend fun translateDownloaded(req: WmTranslationRequest): WmTranslationResult =
+        translateOnDevice(req, allowDownload = false)
+
     suspend fun translate(context: Context, req: WmTranslationRequest): WmTranslationResult {
         require(req.text.isNotBlank()) { "Enter text first" }
         require(req.target in setOf("si", "en", "ko")) { "Only Sinhala, English and Korean" }
