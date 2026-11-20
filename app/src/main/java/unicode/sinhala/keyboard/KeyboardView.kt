@@ -577,19 +577,30 @@ class KeyboardView(
         binding.lZ.setSecondaryLabel(secondaryLabels?.get("z"))
     }
 
-    // Keep number and symbol keys legible without inflating keyboard height.
-    // Maintain at least a 48dp hit height when the user's chosen row height allows it.
-    private fun compactHeight(scale: Float): Int {
-        val minTouchPx = (48f * resources.displayMetrics.density).toInt().coerceAtMost(rowHeight)
-        return (rowHeight * scale).toInt().coerceIn(minTouchPx, rowHeight)
-    }
-
+    // Keep the complete keyboard body at exactly four normal row heights.
+    // Letters have four visible rows. Symbols (and Wijesekara) have five,
+    // so divide the SAME available height among their five touch rows.
+    // At very small user-selected heights, a five-row layout necessarily has
+    // shorter touch targets; never increase the overall IME height to compensate.
     private fun applyCompactKeyMetrics() {
         if (!::binding.isInitialized) return
-        binding.keyRow1.layoutParams.height = compactHeight(0.80f)
-        val letterRowHeight = if (symbolTypographyActive) compactHeight(0.86f) else rowHeight
-        for (row in listOf(binding.keyRow2, binding.keyRow3, binding.keyRow4)) {
-            row.layoutParams.height = letterRowHeight
+        val numberRowVisible = binding.keyRow1.visibility == View.VISIBLE
+        if (numberRowVisible) {
+            val totalHeight = rowHeight * 4
+            val compactRowHeight = (totalHeight / 5).coerceAtLeast(1)
+            binding.keyRow1.layoutParams.height = compactRowHeight
+            for (row in listOf(binding.keyRow2, binding.keyRow3, binding.keyRow4)) {
+                row.layoutParams.height = compactRowHeight
+            }
+            // Give the integer-rounding remainder to the bottom action row.
+            binding.keyRow5.layoutParams.height = totalHeight - compactRowHeight * 4
+        } else {
+            // The invisible number row is excluded from measurement.
+            binding.keyRow1.layoutParams.height = (rowHeight * 4 / 5).coerceAtLeast(1)
+            for (row in listOf(binding.keyRow2, binding.keyRow3, binding.keyRow4)) {
+                row.layoutParams.height = rowHeight
+            }
+            binding.keyRow5.layoutParams.height = rowHeight
         }
         val numberSize = (textSize * 0.70f).coerceIn(17f, 24f)
         for (key in binding.keyRow1.children) {
@@ -614,11 +625,15 @@ class KeyboardView(
         binding.keyboardRows.requestLayout()
     }
 
-    /** Numbers still have their own row in symbols and Wijesekara modes. */
+    /** Number row is visible in Symbols and Wijesekara layouts. */
     fun setNumberRowVisible(visible: Boolean) {
         val wanted = if (visible) View.VISIBLE else View.GONE
         if (binding.keyRow1.visibility != wanted) {
             binding.keyRow1.visibility = wanted
+            // updateKeyboard toggles the symbols flag before the number-row
+            // visibility. Rebalance AFTER the visibility change, too.
+            applyCompactKeyMetrics()
+            binding.keyboardRows.requestLayout()
         }
     }
 
