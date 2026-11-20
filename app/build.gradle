@@ -9,7 +9,8 @@ android {
     namespace "unicode.sinhala.com"
 
     defaultConfig {
-        minSdkVersion 21
+        // ML Kit offline translation requires Android 6.0 (API 23)+.
+        minSdkVersion 23
         versionCode 15
         versionName "1.1.5"
         targetSdkVersion 34
@@ -18,6 +19,8 @@ android {
     }
 
     buildTypes {
+        // Separate debug app for safe phone testing. Release ID unchanged.
+        debug { applicationIdSuffix ".v5test" }
         release {
             minifyEnabled true
             shrinkResources true
@@ -56,6 +59,10 @@ android {
 
 dependencies {
 
+    // WM-style On-device mode for languages that Google ML Kit supports.
+    // Sinhala requires a separate offline engine (Bergamot/NLLB), not ML Kit.
+    implementation 'com.google.mlkit:translate:17.0.3'
+    implementation 'com.google.mlkit:language-id:17.0.6'
     implementation 'androidx.core:core-ktx:1.12.0'
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
     implementation 'androidx.recyclerview:recyclerview:1.3.2'

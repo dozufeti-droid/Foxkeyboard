@@ -96,7 +96,29 @@ fun AiSettingsScreen(onBack: () -> Unit) {
         if (provider == "Google Web Translate") {
             Text("No API key or billing required (unofficial Google web service).")
             Text("Tap English/Korean translation on the keyboard for one-click replacement.")
+            Text("Long-press a translation row to open the WM-style Translate tool.")
             Text("This service can stop working or be rate-limited by Google.")
+            var fallback by remember {
+                mutableStateOf(prefs.getString("wm_online_fallback", "Off") ?: "Off")
+            }
+            var fallbackExpanded by remember { mutableStateOf(false) }
+            Text("Optional online fallback (sends text to your saved AI provider only if enabled)")
+            Box {
+                OutlinedButton(onClick = { fallbackExpanded = true }) {
+                    Text("Fallback: $fallback  ▼")
+                }
+                DropdownMenu(expanded = fallbackExpanded, onDismissRequest = {
+                    fallbackExpanded = false
+                }) {
+                    listOf("Off", "GroqCloud", "Google Gemini").forEach { value ->
+                        DropdownMenuItem(text = { Text(value) }, onClick = {
+                            fallback = value
+                            prefs.edit().putString("wm_online_fallback", value).apply()
+                            fallbackExpanded = false
+                        })
+                    }
+                }
+            }
         } else {
             AiKeyControls(provider)
             OutlinedTextField(

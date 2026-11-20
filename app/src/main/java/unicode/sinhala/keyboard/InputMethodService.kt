@@ -88,6 +88,12 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private var aiTranslationEnglish: String? = null
     private var aiTranslationKorean: String? = null
 
+    // An opt-in WM-style tool; does not replace any existing translate rows.
+    private var wmTranslatePanel: WmTranslatePanel? = null
+    private var wmTranslateJob: Job? = null
+    private var wmModelDownloadJob: Job? = null
+    private var wmPreviousTranslationRowsVisibility = View.VISIBLE
+
     private var userInvokedInputMethodPicker = false
 
     private var suggestionEngine: SuggestionEngine? = null
@@ -390,6 +396,12 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             keyboardView.aiSinhalaButtonView.setOnClickListener {
                 onSinhalaTranslateTap()
             }
+            // Long press = the additional WM-style Translate tool. Short
+            // taps keep their original Groq/Gemini/Google V2 behaviour.
+            keyboardView.aiSinhalaButtonView.setOnLongClickListener {
+                openWmTranslationTool()
+                true
+            }
 
             
             keyboardView.aiEnglishView.setOnClickListener {
@@ -397,6 +409,14 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             }
             keyboardView.aiKoreanView.setOnClickListener {
                 onAiTranslationRowTap(false)
+            }
+            keyboardView.aiEnglishView.setOnLongClickListener {
+                openWmTranslationTool()
+                true
+            }
+            keyboardView.aiKoreanView.setOnLongClickListener {
+                openWmTranslationTool()
+                true
             }
 
             return keyboardView
@@ -443,6 +463,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
+        closeWmTranslationTool()
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
         aiSinhalaResult = null
@@ -524,6 +545,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         finishFoxVoiceRecognition()
+        closeWmTranslationTool()
         super.onFinishInputView(finishingInput)
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
@@ -612,6 +634,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun letterOrSymbolClick(tag: String) {
+        wmTranslatePanel?.let { panel ->
+            panel.appendInput(tag)
+            vibrate()
+            return
+        }
         when {
             keyboardLayout == KeyboardLayout.SINGLISH && !keyboardSymbolsActive -> {
                 singlishInput(tag)
@@ -830,6 +857,144 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             Log.e("FoxVoice", "Could not restart speech recognition", e)
             finishFoxVoiceRecognition()
             Toast.makeText(this, "Voice typing unavailable", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Opens the new translator above the SAME keyboard without changing
+     * existing keys, layout, typing preferences or API credentials.
+     */
+    private fun openWmTranslationTool() {
+        if (!::keyboardView.isInitialized) return
+        if (wmTranslatePanel != null) return
+        val info = currentInputEditorInfo ?: return
+        if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT ||
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0 ||
+            isInPasswordField()) {
+            Toast.makeText(this, "Translate is unavailable in this field", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val editor = currentInputConnection ?: return
+        val selected = editor.getSelectedText(0)?.toString()?.takeIf { it.isNotBlank() }
+        val original = selected ?: editor.getTextBeforeCursor(2500, 0)
+            ?.toString()?.substringAfterLast('\n').orEmpty()
+
+        lateinit var panel: WmTranslatePanel
+        panel = WmTranslatePanel(
+            context = this,
+            initialText = original,
+            onTranslate = { request ->
+                wmTranslateJob?.cancel()
+                wmTranslateJob = serviceScope.launch {
+                    try {
+                        val translated = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                            unicode.sinhala.keyboard.ai.WmTranslationEngine.translate(
+                                this@InputMethodService, request
+                            )
+                        }
+                        if (wmTranslatePanel === panel) {
+                            panel.showTranslated(request, translated.text, translated.via)
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (wmTranslatePanel === panel) {
+                            val message = when {
+                                e.message?.contains("429") == true ->
+                                    "Google rate limited. Switch to an enabled AI fallback."
+                                e.message?.contains("model", true) == true ->
+                                    e.message.orEmpty()
+                                e.message?.contains("offline", true) == true ->
+                                    e.message.orEmpty()
+                                else -> "Translation unavailable: ${e.message.orEmpty().take(65)}"
+                            }
+                            panel.showError(request, message)
+                        }
+                    }
+                }
+            },
+            onDownload = {
+                wmModelDownloadJob?.cancel()
+                panel.showDownloadStatus("Downloading English/Korean offline models...")
+                wmModelDownloadJob = serviceScope.launch {
+                    try {
+                        kotlinx.coroutines.withContext(Dispatchers.IO) {
+                            unicode.sinhala.keyboard.ai.WmTranslationEngine.downloadEnglishKoreanModels()
+                        }
+                        if (wmTranslatePanel === panel) {
+                            panel.showDownloadStatus("EN/Korean offline models ready. Select Automatic.")
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        if (wmTranslatePanel === panel) {
+                            panel.showDownloadStatus("Model download failed. Check internet/storage.")
+                        }
+                    }
+                }
+            },
+            onReplace = { translated, currentQuery ->
+                // Never replace a changed draft or text in a different editor.
+                if (currentQuery != original || currentInputEditorInfo !== info ||
+                    currentInputConnection !== editor || original.isEmpty()) {
+                    false
+                } else {
+                    val stillOriginal = if (selected != null) {
+                        editor.getSelectedText(0)?.toString() == original
+                    } else {
+                        editor.getTextBeforeCursor(original.length, 0)?.toString() == original
+                    }
+                    if (!stillOriginal) false
+                    else {
+                        editor.beginBatchEdit()
+                        try {
+                            if (selected == null) editor.deleteSurroundingText(original.length, 0)
+                            editor.commitText(translated, 1)
+                        } finally {
+                            editor.endBatchEdit()
+                        }
+                        true
+                    }
+                }
+            },
+            onInsert = { translated ->
+                // commitText would REPLACE a selected range. Insert must never
+                // silently destroy it. Ask user to deselect first.
+                if (currentInputEditorInfo !== info || currentInputConnection !== editor ||
+                    editor.getSelectedText(0)?.isNotEmpty() == true) {
+                    false
+                } else {
+                    editor.commitText(translated, 1)
+                    true
+                }
+            },
+            onClose = { closeWmTranslationTool() }
+        )
+        wmTranslatePanel = panel
+        val existingRows = keyboardView.findViewById<View>(R.id.ai_translation_rows)
+        wmPreviousTranslationRowsVisibility = existingRows?.visibility ?: View.VISIBLE
+        existingRows?.visibility = View.GONE
+        keyboardView.addView(
+            panel, 0,
+            android.widget.LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        )
+    }
+
+    private fun closeWmTranslationTool() {
+        wmTranslateJob?.cancel()
+        wmTranslateJob = null
+        wmModelDownloadJob?.cancel()
+        wmModelDownloadJob = null
+        val panel = wmTranslatePanel ?: return
+        wmTranslatePanel = null
+        panel.dispose()
+        (panel.parent as? android.view.ViewGroup)?.removeView(panel)
+        if (::keyboardView.isInitialized) {
+            keyboardView.findViewById<View>(R.id.ai_translation_rows)?.visibility =
+                wmPreviousTranslationRowsVisibility
         }
     }
 
@@ -1555,6 +1720,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private fun getSinglishChars(input: String): CHAR? = singlishMap[input]
 
     override fun emojiClick(tag: String) {
+        wmTranslatePanel?.let { panel ->
+            panel.appendInput(tag)
+            return
+        }
         val ic = currentInputConnection
         if (ic != null) {
             try {
@@ -1571,6 +1740,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun numberClick(tag: String) {
+        wmTranslatePanel?.let { panel ->
+            panel.appendInput(tag)
+            return
+        }
         val ic = currentInputConnection
         if (ic != null) {
             try {
@@ -1592,6 +1765,16 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
     override fun functionClick(type: Function) {
+        wmTranslatePanel?.let { panel ->
+            if (type == Function.BACKSPACE) {
+                panel.backspace()
+                return
+            }
+            if (type == Function.ACTION) {
+                panel.requestNow()
+                return
+            }
+        }
         val ic = currentInputConnection
         when (type) {
             Function.ACTION -> {
@@ -1690,6 +1873,18 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun specialClick(tag: String) {
+        wmTranslatePanel?.let { panel ->
+            val character = when (tag) {
+                "32" -> " "
+                "44" -> ","
+                "46" -> "."
+                else -> if (tag.isNotEmpty() && tag.all { it.isDigit() }) {
+                    tag.toIntOrNull()?.toChar()?.toString() ?: tag
+                } else tag
+            }
+            panel.appendInput(character)
+            return
+        }
         if (tag == " " || tag == "32") rememberFoxCompletedWord()
         val ic = currentInputConnection
         if (ic != null) {
