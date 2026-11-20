@@ -479,6 +479,9 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
+        // Always return to the letter face when the keyboard opens again.
+        // Numeric-only editors are still given their dedicated numpad below.
+        keyboardSymbolsActive = false
         closeWmTranslationTool()
         foxOneTapController.cancel()
         aiSinhalaJob?.cancel()
@@ -546,6 +549,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         // Never dictate into another field after focus changes.
         if (foxVoiceListening) finishFoxVoiceRecognition()
         super.onStartInput(attribute, restarting)
+        // A newly focused editor must not inherit the previous symbols face.
+        keyboardSymbolsActive = false
         Log.d("IME", "onStartInput called restarting=$restarting")
 
         if (currentInputConnection == null && restarting) {
@@ -2037,6 +2042,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     private fun updateKeyboard() {
         if (::keyboardView.isInitialized) refreshFoxVoiceBadge()
+        // Size the number/symbol face independently of the full-size letters.
+        keyboardView.setSymbolTypography(keyboardSymbolsActive)
         // Match familiar compact phonetic/English layout; preserve symbols row.
         keyboardView.setNumberRowVisible(
             keyboardSymbolsActive || keyboardLayout == KeyboardLayout.WIJESEKARA

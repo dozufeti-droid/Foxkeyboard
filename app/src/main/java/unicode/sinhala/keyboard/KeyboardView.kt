@@ -66,6 +66,8 @@ class KeyboardView(
     }
 
     private var lastBackspaceDownTime = 0L
+    // Presentation-only. The language selected in Settings remains unchanged.
+    private var symbolTypographyActive = false
 
     var keyboardVisible = false
 
@@ -133,8 +135,23 @@ class KeyboardView(
     private val swipeStepDistance: Float = resources.displayMetrics.widthPixels / 15f
     private var startIgnoreSwipe = false
     private var currentSwipeActionType = SwipeActionType.NONE
+    private var swipeBottomRowTop = 0f
 
     private enum class SwipeActionType { ERASE, MOVE_CURSOR, NONE }
+
+    // Follow the real row geometry as compact symbol rows change their height.
+    private fun bottomRowTopForSwipes(): Float {
+        if (!::binding.isInitialized || binding.keyboardRows.visibility != VISIBLE) {
+            return rowHeight * 4f
+        }
+        return try {
+            val rect = android.graphics.Rect(0, 0, binding.keyRow5.width, binding.keyRow5.height)
+            offsetDescendantRectToMyCoords(binding.keyRow5, rect)
+            rect.top.toFloat()
+        } catch (_: IllegalArgumentException) {
+            rowHeight * 4f
+        }
+    }
 
     override fun onInterceptTouchEvent(ev: MotionEvent?): Boolean {
         if (swipeToErase || swipeToMoveCursor) {
@@ -143,15 +160,16 @@ class KeyboardView(
                 MotionEvent.ACTION_DOWN -> {
                     currentSwipeActionType = SwipeActionType.NONE
                     swipeStepStartX = ev.x
+                    swipeBottomRowTop = bottomRowTopForSwipes()
                 }
 
                 MotionEvent.ACTION_MOVE -> {
                     if (!startIgnoreSwipe) {
                         val distanceFromDownX: Float = swipeStepStartX - ev.x
 
-                        if (swipeToErase && ev.y < rowHeight * 4 && distanceFromDownX > swipeStepDistance)
+                        if (swipeToErase && ev.y < swipeBottomRowTop && distanceFromDownX > swipeStepDistance)
                             currentSwipeActionType = SwipeActionType.ERASE
-                        else if (swipeToMoveCursor && ev.y >= rowHeight * 4 && (distanceFromDownX > swipeStepDistance || distanceFromDownX < -swipeStepDistance))
+                        else if (swipeToMoveCursor && ev.y >= swipeBottomRowTop && (distanceFromDownX > swipeStepDistance || distanceFromDownX < -swipeStepDistance))
                             currentSwipeActionType = SwipeActionType.MOVE_CURSOR
 
                         return currentSwipeActionType != SwipeActionType.NONE
@@ -229,24 +247,7 @@ class KeyboardView(
             }
         }
 
-        // foxNoResizeBrandingOverlay2026: decorative view MUST NOT be a measured child.
-        // The drawing lives in keyboardRows.overlay, which cannot increase the IME height
-        // and does not intercept touches. This preserves every original key hit target.
-        val foxSignatureOverlay = FoxColorSignature(contextThemeWrapper)
-        var foxSignatureOverlayAdded = false
-        binding.keyboardRows.addOnLayoutChangeListener { _, left, top, right, bottom, _, _, _, _ ->
-            val drawWidth = right - left
-            val drawHeight = bottom - top
-            if (drawWidth > 0 && drawHeight > 0) {
-                if (!foxSignatureOverlayAdded) {
-                    binding.keyboardRows.overlay.add(foxSignatureOverlay)
-                    foxSignatureOverlayAdded = true
-                }
-                if (foxSignatureOverlay.width != drawWidth || foxSignatureOverlay.height != drawHeight) {
-                    foxSignatureOverlay.layout(0, 0, drawWidth, drawHeight)
-                }
-            }
-        }
+        // Do not paint branding over key labels or run a decorative animation.
         // Full key-cell touch targets, with no separate letter tile visuals.
         // Match the supplied screenshot's charcoal background (#273238).
         val flatBackground = Color.rgb(39, 50, 56)
@@ -275,6 +276,7 @@ class KeyboardView(
                     for (button in row.children)
                         if (button is KeyboardButton)
                             button.textSize = textSize.toFloat()
+            applyCompactKeyMetrics()
 
             // Calculate padding to ensure icon size scales with text size
             val density = resources.displayMetrics.density
@@ -575,6 +577,43 @@ class KeyboardView(
         binding.lZ.setSecondaryLabel(secondaryLabels?.get("z"))
     }
 
+    // Keep number and symbol keys legible without inflating keyboard height.
+    // Maintain at least a 48dp hit height when the user's chosen row height allows it.
+    private fun compactHeight(scale: Float): Int {
+        val minTouchPx = (48f * resources.displayMetrics.density).toInt().coerceAtMost(rowHeight)
+        return (rowHeight * scale).toInt().coerceIn(minTouchPx, rowHeight)
+    }
+
+    private fun applyCompactKeyMetrics() {
+        if (!::binding.isInitialized) return
+        binding.keyRow1.layoutParams.height = compactHeight(0.80f)
+        val letterRowHeight = if (symbolTypographyActive) compactHeight(0.86f) else rowHeight
+        for (row in listOf(binding.keyRow2, binding.keyRow3, binding.keyRow4)) {
+            row.layoutParams.height = letterRowHeight
+        }
+        val numberSize = (textSize * 0.70f).coerceIn(17f, 24f)
+        for (key in binding.keyRow1.children) {
+            if (key is KeyboardButton) key.textSize = numberSize
+        }
+        val letterSize = if (symbolTypographyActive) {
+            (textSize * 0.72f).coerceIn(18f, 26f)
+        } else {
+            textSize.toFloat()
+        }
+        for (row in listOf(binding.keyRow2, binding.keyRow3, binding.keyRow4)) {
+            for (key in row.children) {
+                if (key is KeyboardButton) key.textSize = letterSize
+            }
+        }
+    }
+
+    fun setSymbolTypography(active: Boolean) {
+        if (!::binding.isInitialized || symbolTypographyActive == active) return
+        symbolTypographyActive = active
+        applyCompactKeyMetrics()
+        binding.keyboardRows.requestLayout()
+    }
+
     /** Numbers still have their own row in symbols and Wijesekara modes. */
     fun setNumberRowVisible(visible: Boolean) {
         val wanted = if (visible) View.VISIBLE else View.GONE
@@ -638,6 +677,8 @@ class KeyboardView(
                 }
             }
         }
+        // updateDimensions runs when IME reopens; preserve compact symbol geometry.
+        applyCompactKeyMetrics()
 
         val density = resources.displayMetrics.density
         val targetIconSize = newTextSize * density
