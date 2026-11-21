@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import unicode.sinhala.com.R
 import unicode.sinhala.keyboard.Maps.keyLabelsLettersEnglish
 import unicode.sinhala.keyboard.Maps.keyLabelsLettersEnglishShifted
@@ -107,6 +108,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private var debouncer: DebouncedInputHandler? = null
     private var topBarController: TopBarController? = null
     private var suggestionTextViews: List<TextView> = emptyList()
+    // Offline Sinhala dictionary is opened only from Dispatchers.IO.
+    private val foxOfflineDictionary by lazy { FoxOfflineDictionary(this) }
+    private var foxOfflineJob: Job? = null
+    private var foxOfflineGeneration = 0
     // Android system speech service, not Gemini. User starts and stops microphone explicitly.
     private var foxVoiceRecognizer: SpeechRecognizer? = null
     private var foxVoiceListening = false
@@ -141,6 +146,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         suggestionEngine = SuggestionEngine(this)
         // DKEY_TENK2026: parse the 10k shipped words off the keyboard UI thread.
         serviceScope.launch(Dispatchers.IO) { suggestionEngine?.initializeIfNeeded() }
+        // Copy the 5.2 MB asset once in the background; never block key presses.
+        serviceScope.launch(Dispatchers.IO) { foxOfflineDictionary.prepare() }
         debouncer = DebouncedInputHandler(serviceScope, 700L)
 
         // Remember the chosen dictation language without changing keyboard language.
@@ -152,6 +159,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
     override fun onDestroy() {
+        foxOfflineGeneration++
+        foxOfflineJob?.cancel()
         finishFoxVoiceRecognition()
         unregisterClipboardListener()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -519,6 +528,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
+        foxOfflineGeneration++
+        foxOfflineJob?.cancel()
         // Always return to the letter face when the keyboard opens again.
         // Numeric-only editors are still given their dedicated numpad below.
         keyboardSymbolsActive = false
@@ -606,6 +617,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        foxOfflineGeneration++
+        foxOfflineJob?.cancel()
         finishFoxVoiceRecognition()
         closeWmTranslationTool()
         foxOneTapController.cancel()
@@ -670,8 +683,70 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         if (word.isNotBlank()) suggestionEngine?.recordTypedWord(word)
     }
 
+    // The original token is captured BEFORE Space so only that exact text can be replaced.
+    // Do not translate passwords, private/no-suggestion fields, or Latin-only tokens.
+    private fun foxOfflineWordBeforeSpace(): String? {
+        if (!suggestionsEnabled || !foxCanLearnFromEditor()) return null
+        val before = currentInputConnection?.getTextBeforeCursor(96, 0)?.toString() ?: return null
+        val original = before.takeLastWhile { ch ->
+            val kind = Character.getType(ch)
+            Character.isLetter(ch) ||
+                kind == Character.NON_SPACING_MARK.toInt() ||
+                kind == Character.COMBINING_SPACING_MARK.toInt() ||
+                ch == '\u200D' || ch == '\u200C'
+        }
+        return original.takeIf { word ->
+            word.isNotBlank() && word.length <= 64 &&
+                word.any { it.code in 0x0D80..0x0DFF }
+        }
+    }
+
+    private fun foxRequestOfflineTranslation(original: String) {
+        val editor = currentInputConnection ?: return
+        val editorInfo = currentInputEditorInfo ?: return
+        val generation = ++foxOfflineGeneration
+        foxOfflineJob?.cancel()
+        foxOfflineJob = serviceScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                foxOfflineDictionary.lookup(original)
+            } ?: return@launch
+
+            // Ignore results after typing, cursor movement, editor switch, or IME close.
+            if (generation != foxOfflineGeneration || !foxCanLearnFromEditor() ||
+                currentInputEditorInfo !== editorInfo || currentInputConnection !== editor ||
+                editor.getSelectedText(0)?.isNotEmpty() == true ||
+                editor.getTextBeforeCursor(original.length + 1, 0)?.toString() != "$original ") {
+                return@launch
+            }
+
+            val values = listOf(original, result.english, result.korean.orEmpty())
+            topBarController?.showOfflineTranslations(values, suggestionTextViews) { selected ->
+                if (selected == original) {
+                    topBarController?.showNormal()
+                } else if (selected.isNotEmpty() && generation == foxOfflineGeneration &&
+                    foxCanLearnFromEditor() && currentInputEditorInfo === editorInfo &&
+                    currentInputConnection === editor &&
+                    editor.getSelectedText(0)?.isNotEmpty() != true &&
+                    editor.getTextBeforeCursor(original.length + 1, 0)?.toString() == "$original ") {
+                    // Preserve the space and refuse replacement if text/cursor changed.
+                    editor.beginBatchEdit()
+                    try {
+                        editor.deleteSurroundingText(original.length + 1, 0)
+                        editor.commitText("$selected ", 1)
+                    } finally {
+                        editor.endBatchEdit()
+                    }
+                    foxOfflineGeneration++
+                    topBarController?.showNormal()
+                }
+            }
+        }
+    }
+
     // Helper to request suggestions for a token
     private fun requestSuggestionsForToken(token: String) {
+        foxOfflineGeneration++
+        foxOfflineJob?.cancel()
         // Do not auto-hide suggestions once opened. Only disable suggestions for password fields or when disabled in prefs.
         if (!suggestionsEnabled || !foxCanLearnFromEditor()) {
             topBarController?.showNormal()
@@ -1956,6 +2031,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             panel.appendInput(character)
             return
         }
+        val foxOfflineWord = if (tag == " " || tag == "32") {
+            foxOfflineWordBeforeSpace()
+        } else null
+        foxOfflineGeneration++
+        foxOfflineJob?.cancel()
         if (tag == " " || tag == "32") rememberFoxCompletedWord()
         val ic = currentInputConnection
         if (ic != null) {
@@ -1992,6 +2072,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             // hide suggestions on space/punctuation
             topBarController?.showNormal()
             debouncer?.cancel()
+            if (foxOfflineWord != null) foxRequestOfflineTranslation(foxOfflineWord)
         }
         checkAutoUnshift()
     }
