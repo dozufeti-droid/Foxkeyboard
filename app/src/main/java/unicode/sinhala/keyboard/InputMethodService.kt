@@ -186,22 +186,60 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         }
     }
 
+    // Clipboard previews are independent of learning suggestions.
+    // Allow ordinary text/email/number editors, but never password fields.
+    private fun foxCanShowClipboardChip(): Boolean {
+        val info = currentInputEditorInfo ?: return false
+        if ((info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) return false
+        return when (info.inputType and InputType.TYPE_MASK_CLASS) {
+            InputType.TYPE_CLASS_TEXT -> (info.inputType and InputType.TYPE_MASK_VARIATION) !in setOf(
+                InputType.TYPE_TEXT_VARIATION_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
+                InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD
+            )
+            InputType.TYPE_CLASS_NUMBER ->
+                (info.inputType and InputType.TYPE_MASK_VARIATION) != InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            InputType.TYPE_CLASS_PHONE -> true
+            else -> false
+        }
+    }
+
     private fun onClipboardChanged() {
         if (!ClipboardHistoryManager.isEnabled(this)) return
-        val clipData = clipboardManager?.primaryClip ?: return
+        val clipData = try {
+            clipboardManager?.primaryClip
+        } catch (_: SecurityException) {
+            null
+        } ?: return
         if (clipData.itemCount > 0) {
-            val text = clipData.getItemAt(0).coerceToText(this)?.toString()
+            // Text-only: do not resolve provider URIs while typing.
+            val text = clipData.getItemAt(0).text?.toString()
             if (!text.isNullOrBlank()) {
-                val newClip = ClipboardHistoryManager.addClip(this, text)
-                if (newClip != null) {
-                    showClipboardChip(newClip.text)
-                }
+                ClipboardHistoryManager.addClip(this, text)
+                if (foxCanShowClipboardChip()) showClipboardChip(text)
             }
         }
     }
 
     private fun checkAndShowRecentClipboardChip() {
-        val recent = ClipboardHistoryManager.getLatestClipIfRecent(this, 60_000L)
+        // Read on keyboard focus: clipboard callbacks may be missed while the IME is hidden.
+        if (!ClipboardHistoryManager.isEnabled(this) || !foxCanShowClipboardChip()) {
+            topBarController?.hideClipboardSuggestion()
+            return
+        }
+        val currentText = try {
+            clipboardManager?.primaryClip?.let { clip ->
+                if (clip.itemCount > 0) clip.getItemAt(0).text?.toString() else null
+            }
+        } catch (_: SecurityException) {
+            null
+        }
+        if (!currentText.isNullOrBlank()) {
+            ClipboardHistoryManager.addClip(this, currentText)
+            showClipboardChip(currentText)
+            return
+        }
+        val recent = ClipboardHistoryManager.getLatestClipIfRecent(this, 5 * 60_000L)
         if (recent != null) {
             showClipboardChip(recent.text)
         } else {
@@ -338,8 +376,19 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     private fun showClipboardChip(text: String) {
         topBarController?.showClipboardSuggestion(text) { pastedText ->
-            specialClick(pastedText)
+            pasteClipboardText(pastedText)
         }
+    }
+
+    override fun pasteClipboardText(text: String) {
+        if (text.isEmpty()) return
+        wmTranslatePanel?.let { panel ->
+            panel.appendInput(text)
+            return
+        }
+        // Paste literal text, not an integer key-code tag.
+        currentInputConnection?.commitText(text, 1)
+        topBarController?.showNormal()
     }
 
     private fun commitWijesekaraChar(char: String) {
@@ -414,10 +463,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             }
             // Long press = the additional WM-style Translate tool. Short
             // taps keep their original Groq/Gemini/Google V2 behaviour.
-            keyboardView.aiSinhalaButtonView.setOnLongClickListener {
-                openWmTranslationTool()
-                true
-            }
+            keyboardView.aiSinhalaButtonView.setOnLongClickListener { true }
 
             
             keyboardView.aiEnglishView.setOnClickListener {
@@ -426,14 +472,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             keyboardView.aiKoreanView.setOnClickListener {
                 onAiTranslationRowTap(false)
             }
-            keyboardView.aiEnglishView.setOnLongClickListener {
-                openWmTranslationTool()
-                true
-            }
-            keyboardView.aiKoreanView.setOnLongClickListener {
-                openWmTranslationTool()
-                true
-            }
+            keyboardView.aiEnglishView.setOnLongClickListener { true }
+            keyboardView.aiKoreanView.setOnLongClickListener { true }
 
             return keyboardView
         } catch (t: Throwable) {

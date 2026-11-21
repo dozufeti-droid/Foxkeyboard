@@ -55,6 +55,7 @@ class KeyboardView(
         fun numberClick(tag: String)
         fun functionClick(type: Function)
         fun specialClick(tag: String)
+        fun pasteClipboardText(text: String)
     }
 
     interface SwipeListener {
@@ -406,7 +407,7 @@ class KeyboardView(
             binding.emojiView.btnBackspace.setOnTouchListener(backspaceTouchListener)
 
             // Emoji Logic
-            binding.emojiView.root.layoutParams.height = rowHeight * 5
+            binding.emojiView.root.layoutParams.height = rowHeight * 4
             binding.emojiView.emojiBottomBar.layoutParams.height = rowHeight
 
             val emojiCategories = binding.emojiView.emojiCategories
@@ -457,11 +458,11 @@ class KeyboardView(
             binding.emojiView.btnAbc.setOnClickListener { toggleEmojiView(false) }
 
             // Clipboard Logic
-            binding.clipboardView.root.layoutParams.height = rowHeight * 5
+            binding.clipboardView.root.layoutParams.height = rowHeight * 4
 
             val localClipboardAdapter = ClipboardAdapter(
                 onItemClick = { item ->
-                    clickListener.specialClick(item.text)
+                    clickListener.pasteClipboardText(item.text)
                     toggleClipboardView(false)
                 },
                 onPinClick = { item ->
@@ -492,7 +493,7 @@ class KeyboardView(
             }
 
             // Numpad Setup
-            binding.numpadView.root.layoutParams.height = rowHeight * 5
+            binding.numpadView.root.layoutParams.height = rowHeight * 4
 
             val numButtons = listOf(
                 binding.numpadView.num1, binding.numpadView.num2, binding.numpadView.num3,
@@ -701,10 +702,10 @@ class KeyboardView(
         binding.emojiView.btnBackspace.setPadding(padding, padding, padding, padding)
         binding.emojiView.btnAbc.setPadding(padding, padding, padding, padding)
 
-        binding.emojiView.root.layoutParams.height = newRowHeight * 5
+        binding.emojiView.root.layoutParams.height = newRowHeight * 4
         binding.emojiView.emojiBottomBar.layoutParams.height = newRowHeight
-        binding.clipboardView.root.layoutParams.height = newRowHeight * 5
-        binding.numpadView.root.layoutParams.height = newRowHeight * 5
+        binding.clipboardView.root.layoutParams.height = newRowHeight * 4
+        binding.numpadView.root.layoutParams.height = newRowHeight * 4
 
         for (row in binding.numpadView.numpadRoot.children) {
             if (row is LinearLayout) {

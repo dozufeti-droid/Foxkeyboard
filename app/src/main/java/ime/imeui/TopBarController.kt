@@ -35,6 +35,10 @@ class TopBarController(
         suggestionContainer?.visibility = View.VISIBLE
         emojiButton?.visibility = View.VISIBLE
         clipboardButton?.visibility = View.VISIBLE
+        // The paste chip occupies the entire suggestion row; hide stale word chips.
+        for (id in intArrayOf(R.id.suggestion_1, R.id.suggestion_2, R.id.suggestion_3)) {
+            suggestionContainer?.findViewById<TextView>(id)?.visibility = View.GONE
+        }
 
         chipClipboardSuggestion?.let { chip ->
             chip.text = "Paste: ${text.replace("\n", " ")}"
@@ -61,7 +65,8 @@ class TopBarController(
         }
 
         emojiButton?.visibility = View.GONE
-        clipboardButton?.visibility = View.GONE
+        // Keep the clipboard button accessible while word suggestions appear.
+        clipboardButton?.visibility = View.VISIBLE
         suggestionContainer?.visibility = View.VISIBLE
         for (i in 0 until 3) {
             val tv = suggestionTextViews.getOrNull(i)
