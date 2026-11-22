@@ -391,6 +391,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     override fun pasteClipboardText(text: String) {
         if (text.isEmpty()) return
+        foxPhonetic.reset()
         wmTranslatePanel?.let { panel ->
             panel.appendInput(text)
             return
@@ -528,6 +529,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
      override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
          super.onStartInputView(info, restarting)
+        foxPhonetic.reset()
         foxOfflineGeneration++
         foxOfflineJob?.cancel()
         // Always return to the letter face when the keyboard opens again.
@@ -617,6 +619,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
+        foxPhonetic.reset()
         foxOfflineGeneration++
         foxOfflineJob?.cancel()
         finishFoxVoiceRecognition()
@@ -1431,6 +1434,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     private fun onSuggestionClicked(suggestion: String) {
+        foxPhonetic.reset()
         val ic = currentInputConnection ?: return
         // Replace current token with suggestion
         val before = ic.getTextBeforeCursor(100, 0)?.toString() ?: ""
@@ -1462,11 +1466,54 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     // The first h in ch is part of Helakuru-style ch; only chh makes ඡ.
     private var pendingChDigraph = false
     private var positionFlag = ""
+    // Only SINGLISH typing uses this compositor. Translation, English and
+    // Wijesekara keyboard faces continue to use their original code paths.
+    private val foxPhonetic = FoxPhoneticComposer()
 
     private fun hasPositionChanged(): Boolean =
         currentInputConnection.getTextBeforeCursor(5, 0)?.toString() != positionFlag
 
+    // Apply the minimum changed Unicode suffix in one editor batch.
+    // The compositor never touches selection/clipboard/translation services.
+    private fun applyFoxPhoneticEdit(
+        ic: android.view.inputmethod.InputConnection,
+        edit: FoxPhoneticComposer.Edit
+    ) {
+        if (edit.removeCodePoints == 0 && edit.insert.isEmpty()) return
+        ic.beginBatchEdit()
+        try {
+            if (edit.removeCodePoints > 0) {
+                ic.deleteSurroundingTextInCodePoints(edit.removeCodePoints, 0)
+            }
+            if (edit.insert.isNotEmpty()) ic.commitText(edit.insert, 1)
+        } catch (e: Exception) {
+            foxPhonetic.reset()
+            Log.w("FoxPhonetic", "Could not apply phonetic edit", e)
+        } finally {
+            ic.endBatchEdit()
+        }
+    }
+
     private fun singlishInput(input: String) {
+        if (input.length == 1 &&
+            (input[0] in 'a'..'z' || input[0] in 'A'..'Z')) {
+            val ic = currentInputConnection ?: return
+            try {
+                // Replacing a selection begins a fresh word.
+                if (ic.getSelectedText(0)?.isNotEmpty() == true) foxPhonetic.reset()
+                val before = ic.getTextBeforeCursor(256, 0)?.toString().orEmpty()
+                val edit = foxPhonetic.type(input, before)
+                if (edit != null) {
+                    applyFoxPhoneticEdit(ic, edit)
+                    return
+                }
+            } catch (e: Exception) {
+                foxPhonetic.reset()
+                Log.w("FoxPhonetic", "Falling back to original input", e)
+            }
+        }
+        foxPhonetic.reset()
+        // Keep the prior non-letter/fallback behavior unchanged.
         var output = ""
         var erasePreviousChars = 0
         var mLastChar: CHAR? = null
@@ -1866,6 +1913,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private fun getSinglishChars(input: String): CHAR? = singlishMap[input]
 
     override fun emojiClick(tag: String) {
+        foxPhonetic.reset()
         wmTranslatePanel?.let { panel ->
             panel.appendInput(tag)
             return
@@ -1886,6 +1934,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun numberClick(tag: String) {
+        foxPhonetic.reset()
         wmTranslatePanel?.let { panel ->
             panel.appendInput(tag)
             return
@@ -1922,6 +1971,23 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             }
         }
         val ic = currentInputConnection
+        if (type == Function.BACKSPACE && keyboardLayout == KeyboardLayout.SINGLISH &&
+            !keyboardSymbolsActive && ic != null &&
+            ic.getSelectedText(0)?.isNotEmpty() != true) {
+            try {
+                val edit = foxPhonetic.backspace(
+                    ic.getTextBeforeCursor(256, 0)?.toString().orEmpty())
+                if (edit != null) {
+                    applyFoxPhoneticEdit(ic, edit)
+                    vibrate()
+                    return
+                }
+            } catch (e: Exception) {
+                foxPhonetic.reset()
+                Log.w("FoxPhonetic", "Backspace fallback", e)
+            }
+        }
+        if (type != Function.SHIFT) foxPhonetic.reset()
         when (type) {
             Function.ACTION -> {
                 if (ic != null) {
@@ -2031,6 +2097,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             panel.appendInput(character)
             return
         }
+        foxPhonetic.reset()
         val foxOfflineWord = if (tag == " " || tag == "32") {
             foxOfflineWordBeforeSpace()
         } else null
@@ -2078,6 +2145,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     override fun eraseDo() {
+        foxPhonetic.reset()
         val ic = currentInputConnection
         if (ic != null) {
             try {
