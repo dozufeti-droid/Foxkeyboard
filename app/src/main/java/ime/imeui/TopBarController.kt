@@ -54,16 +54,6 @@ class TopBarController(
         chipClipboardSuggestion?.visibility = View.GONE
     }
 
-    // Clipboard paste preview has priority over offline translations.
-    fun showOfflineTranslations(
-        translations: List<String>,
-        suggestionTextViews: List<TextView>,
-        onClick: (String) -> Unit
-    ) {
-        if (chipClipboardSuggestion?.visibility == View.VISIBLE) return
-        showSuggestions(translations, suggestionTextViews, onClick)
-    }
-
     fun showSuggestions(suggestions: List<String>, suggestionTextViews: List<TextView>, onClick: (String) -> Unit) {
         if (chipClipboardSuggestion?.visibility == View.VISIBLE) {
             // Keep clipboard suggestion active if present, or hide if suggestions are non-empty
