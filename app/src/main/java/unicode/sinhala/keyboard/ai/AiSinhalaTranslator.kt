@@ -2,8 +2,6 @@ package unicode.sinhala.keyboard.ai
 
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 object AiSinhalaTranslator {
 
@@ -11,7 +9,7 @@ object AiSinhalaTranslator {
         text: String,
         model: String,
         apiKey: String,
-        provider: String = "GroqCloud"
+        provider: String = "Google Gemini"
     ): String {
         require(text.isNotBlank()) { "No text to translate" }
         require(model.isNotBlank()) { "Model ID is missing" }
@@ -90,70 +88,12 @@ object AiSinhalaTranslator {
                     .put("content", text)
             )
 
-        if (provider == "Google Gemini") {
-            return GeminiTranslator.translateSinhala(
-                text,
-                messages.getJSONObject(0).getString("content"),
-                model,
-                apiKey
-            )
-        }
-        require(provider == "GroqCloud") { "Unsupported translation provider" }
-        val body = JSONObject()
-            .put("model", model)
-            .put("messages", messages)
-            .put("max_completion_tokens", 4096)
-
-        val connection = URL(
-            "https://api.groq.com/openai/v1/chat/completions"
-        ).openConnection() as HttpURLConnection
-
-        try {
-            connection.requestMethod = "POST"
-            connection.connectTimeout = 10000
-            connection.readTimeout = 30000
-            connection.doOutput = true
-
-            connection.setRequestProperty(
-                "Authorization", "Bearer $apiKey"
-            )
-            connection.setRequestProperty(
-                "Content-Type",
-                "application/json; charset=utf-8"
-            )
-
-            connection.outputStream.use {
-                it.write(
-                    body.toString()
-                        .toByteArray(Charsets.UTF_8)
-                )
-            }
-
-            val status = connection.responseCode
-
-            if (status !in 200..299) {
-                throw Exception("Groq API error: HTTP $status")
-            }
-
-            val response = connection.inputStream
-                .bufferedReader(Charsets.UTF_8)
-                .use { it.readText() }
-
-            val translation = JSONObject(response)
-                .getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content")
-                .trim()
-
-            if (translation.isBlank()) {
-                throw Exception("Empty translation")
-            }
-
-            return translation
-
-        } finally {
-            connection.disconnect()
-        }
+        require(provider == "Google Gemini") { "Only Google Gemini is supported" }
+        return GeminiTranslator.translateSinhala(
+            text,
+            messages.getJSONObject(0).getString("content"),
+            model,
+            apiKey
+        )
     }
 }

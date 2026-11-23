@@ -72,55 +72,16 @@ object WmTranslationEngine {
         }
     }
 
-    private suspend fun translateOnline(context: Context, req: WmTranslationRequest): WmTranslationResult {
-        val prefs = context.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-        // Saved API key/model are NEVER erased by this extra Translate tool.
-        // AI is selected via existing AI Provider, or via opt-in fallback.
-        val explicitFallback = prefs.getString("wm_online_fallback", "Off") ?: "Off"
-        val selectedProvider = prefs.getString("ai_provider", "GroqCloud") ?: "GroqCloud"
-        // Prefer the currently selected AI provider when it is an AI engine.
-        // Google Web mode only uses AI if fallback was explicitly opted into.
-        val preferred = when {
-            selectedProvider in setOf("GroqCloud", "Google Gemini") -> selectedProvider
-            explicitFallback in setOf("GroqCloud", "Google Gemini") -> explicitFallback
-            else -> "Off"
-        }
-        val sourceLooksSinhala = req.source == "si" ||
-            (req.source == "auto" && req.text.any { it in '\u0D80'..'\u0DFF' })
 
-        // Sinhala and Singlish chat need pronouns, polite Korean and context;
-        // the existing AI translator is designed for exactly these cases.
-        // Prioritize it instead of wasting a Google Web request first.
-        if (sourceLooksSinhala && preferred in setOf("GroqCloud", "Google Gemini")) {
-            // Only send to the explicitly configured AI provider. Do not
-            // forward the same private message to Google when it fails.
-            return preferredAiTranslation(context, req, preferred)
-        }
-        // Google is a keyless optional provider. It may return HTTP 429.
-        // Never retry it automatically or try to evade provider limits.
-        return WmTranslationResult(
-            GoogleWebTranslateProvider.translate(req.text, req.target, req.source),
-            "Google Web (online)"
-        )
-    }
 
-    private fun translateQualityAi(context: Context, req: WmTranslationRequest): WmTranslationResult {
-        val prefs = context.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-        val chosen = prefs.getString("ai_provider", "GroqCloud") ?: "GroqCloud"
-        val fallback = prefs.getString("wm_online_fallback", "Off") ?: "Off"
-        val provider = if (chosen in setOf("GroqCloud", "Google Gemini")) chosen else fallback
-        require(provider in setOf("GroqCloud", "Google Gemini")) {
-            "Quality AI requires Gemini or GroqCloud. Configure provider in AI Settings."
-        }
-        if (req.source == "si" || req.text.any { it in '\u0D80'..'\u0DFF' }) {
-            return preferredAiTranslation(context, req, provider)
-        }
-        val model = prefs.getString("ai_model_$provider", "")?.trim().orEmpty()
-        val key = ApiKeyStore(context).load(provider).orEmpty()
-        require(model.isNotBlank() && key.isNotBlank()) { "Quality AI: saved key/model missing" }
-        val answer = EnKoQualityTranslator.translate(req.text, req.source, req.target, model, key, provider)
-        return WmTranslationResult(answer, "$provider (Quality AI)")
-    }
+
+
+    /** Every online/quality request uses the saved Gemini model and key. */
+    private suspend fun translateOnline(context: Context, req: WmTranslationRequest): WmTranslationResult =
+        translateQualityAi(context, req)
+
+    private fun translateQualityAi(context: Context, req: WmTranslationRequest): WmTranslationResult =
+        preferredAiTranslation(context, req, "Google Gemini")
 
     private fun preferredAiTranslation(
         context: Context,

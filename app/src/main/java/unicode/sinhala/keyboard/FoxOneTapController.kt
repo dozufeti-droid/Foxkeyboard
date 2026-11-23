@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import unicode.sinhala.keyboard.ai.FoxQuickTranslator
+import unicode.sinhala.keyboard.ai.FoxSinhalaExplainer
 import unicode.sinhala.keyboard.ai.SinhalaScriptException
 import unicode.sinhala.keyboard.ai.SinglishTranslationHints
 
@@ -147,8 +148,10 @@ class FoxOneTapController(
         val startedMs = SystemClock.elapsedRealtime()
         job = scope.launch {
             try {
+                // One Gemini call returns accurate Sinhala, meaning,
+                // useful vocabulary and a short grammar note.
                 val result = withContext(Dispatchers.IO) {
-                    FoxQuickTranslator.translate(context, copied, "si")
+                    FoxSinhalaExplainer.explain(context, copied)
                 }
                 // Never display a copied message in another app/editor.
                 if (currentInfo() !== originInfo || currentEditor() !== originEditor) return@launch
