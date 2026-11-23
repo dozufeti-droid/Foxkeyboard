@@ -58,6 +58,9 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import unicode.sinhala.keyboard.clipboard.ClipboardHistoryManager
+import unicode.sinhala.keyboard.memory.ConversationMemoryStore
+import unicode.sinhala.keyboard.memory.ConversationMemoryActivity
+import unicode.sinhala.keyboard.memory.FoxContextTranslationController
 
 class InputMethodService : android.inputmethodservice.InputMethodService(),
     KeyboardView.ClickListener, KeyboardView.SwipeListener, LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
@@ -85,6 +88,15 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             currentEditor = { currentInputConnection })
     }
 
+
+    // Profile context is strictly opt-in; normal one-tap remains untouched.
+    private val foxContextControllerState = lazy {
+        FoxContextTranslationController(this, serviceScope,
+            currentInfo = { currentInputEditorInfo },
+            currentEditor = { currentInputConnection },
+            onMeaning = { meaning -> showFoxContextMeaning(meaning) })
+    }
+    private val foxContextController by foxContextControllerState
 
     private var aiTranslationJob: Job? = null
     private var aiSinhalaJob: Job? = null
@@ -211,6 +223,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
     private fun onSinhalaTranslateTap() {
+        if (getSharedPreferences("fox_context_memory", MODE_PRIVATE)
+                .getLong("active_id", -1L) > 0) hideFoxContextMeaning()
         if (getSharedPreferences("prefs", MODE_PRIVATE)
                 .getBoolean("wm_fast_one_tap_enabled", true)) {
             foxOneTapController.translateClipboardToSinhala(
@@ -434,6 +448,13 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 openWmTranslationTool()
                 true
             }
+            // Existing Clipboard click stays untouched; long-press opens profile menu.
+            keyboardView.clipboardButtonView.setOnLongClickListener {
+                showFoxMemoryProfileMenu()
+                true
+            }
+            keyboardView.findViewById<TextView>(R.id.fox_context_meaning_close)
+                ?.setOnClickListener { hideFoxContextMeaning() }
 
             return keyboardView
         } catch (t: Throwable) {
@@ -484,6 +505,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         keyboardSymbolsActive = false
         closeWmTranslationTool()
         foxOneTapController.cancel()
+        if (foxContextControllerState.isInitialized()) foxContextController.cancel()
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
         aiSinhalaResult = null
@@ -499,6 +521,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         if (::keyboardView.isInitialized) {
             keyboardView.aiEnglishView.text = "🇬🇧 English"
             keyboardView.aiKoreanView.text = "🇰🇷 Korean"
+            hideFoxContextMeaning()
+            updateFoxMemoryIndicator()
         }
          lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
          Log.d("IME", "onStartInputView called restarting=$restarting info=")
@@ -569,6 +593,8 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         finishFoxVoiceRecognition()
         closeWmTranslationTool()
         foxOneTapController.cancel()
+        if (foxContextControllerState.isInitialized()) foxContextController.cancel()
+        hideFoxContextMeaning()
         super.onFinishInputView(finishingInput)
         aiSinhalaJob?.cancel()
         aiSinhalaSource = null
@@ -1111,7 +1137,95 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         }
     }
 
+    private fun showFoxContextMeaning(meaning: String) {
+        if (!::keyboardView.isInitialized) return
+        val panel = keyboardView.findViewById<View>(R.id.fox_context_meaning_panel)
+        val text = keyboardView.findViewById<TextView>(R.id.fox_context_meaning_text)
+        // Do not stack two expanded Sinhala panels and obscure the keyboard.
+        keyboardView.aiSinhalaPanelView.visibility = View.GONE
+        text?.text = meaning
+        panel?.visibility = View.VISIBLE // automatically after Korean text is committed
+    }
+
+    private fun hideFoxContextMeaning() {
+        if (!::keyboardView.isInitialized) return
+        keyboardView.findViewById<View>(R.id.fox_context_meaning_panel)?.visibility = View.GONE
+    }
+
+    private fun updateFoxMemoryIndicator() {
+        if (!::keyboardView.isInitialized) return
+        val activeId = getSharedPreferences("fox_context_memory", MODE_PRIVATE)
+            .getLong("active_id", -1L)
+        if (activeId <= 0) {
+            keyboardView.aiKoreanView.text = "🇰🇷 Korean"
+            keyboardView.aiKoreanView.contentDescription = "Translate draft to Korean"
+            hideFoxContextMeaning()
+            return
+        }
+        val store = ConversationMemoryStore(this)
+        val active = try { store.getProfile(activeId) } finally { store.close() }
+        keyboardView.aiKoreanView.text = if (active == null) "🇰🇷 Korean"
+            else "🇰🇷 ${active.name.take(12)} · ON"
+        keyboardView.aiKoreanView.contentDescription = if (active == null)
+            "Translate draft to Korean" else "Context translate for ${active.name}"
+        if (active == null) hideFoxContextMeaning()
+    }
+
+    private fun showFoxMemoryProfileMenu() {
+        if (!::keyboardView.isInitialized) return
+        val store = ConversationMemoryStore(this)
+        val profiles = try { store.listProfiles() } finally { store.close() }
+        val current = getSharedPreferences("fox_context_memory", MODE_PRIVATE)
+            .getLong("active_id", -1L)
+        val menu = PopupMenu(this, keyboardView.clipboardButtonView)
+        menu.menu.add(0, 1, 0, if (current < 0) "✓ Context OFF" else "Context OFF")
+        profiles.forEachIndexed { index, profile ->
+            menu.menu.add(0, 100 + index, 1 + index,
+                (if (current == profile.id) "✓ " else "") + profile.name.take(36))
+        }
+        menu.menu.add(0, 2, profiles.size + 2, "Manage Profiles / Import Chat…")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> {
+                    val db = ConversationMemoryStore(this)
+                    try { db.setActiveProfile(null) } finally { db.close() }
+                    if (foxContextControllerState.isInitialized()) foxContextController.cancel()
+                    updateFoxMemoryIndicator()
+                    true
+                }
+                2 -> {
+                    startActivity(Intent(this, ConversationMemoryActivity::class.java)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    true
+                }
+                else -> {
+                    val profile = profiles.getOrNull(item.itemId - 100)
+                    if (profile == null) false else {
+                        val db = ConversationMemoryStore(this)
+                        try { db.setActiveProfile(profile.id) } finally { db.close() }
+                        if (foxContextControllerState.isInitialized()) foxContextController.cancel()
+                        hideFoxContextMeaning()
+                        updateFoxMemoryIndicator()
+                        true
+                    }
+                }
+            }
+        }
+        menu.show()
+    }
+
     private fun onAiTranslationRowTap(english: Boolean) {
+        if (english && getSharedPreferences("fox_context_memory", MODE_PRIVATE)
+                .getLong("active_id", -1L) > 0) hideFoxContextMeaning()
+        if (!english) {
+            val activeId = getSharedPreferences("fox_context_memory", MODE_PRIVATE)
+                .getLong("active_id", -1L)
+            if (activeId > 0) {
+                hideFoxContextMeaning()
+                foxContextController.translateKorean(keyboardView.aiKoreanView, activeId)
+                return
+            }
+        }
         if (getSharedPreferences("prefs", MODE_PRIVATE)
                 .getBoolean("wm_fast_one_tap_enabled", true)) {
             foxOneTapController.translateDraft(

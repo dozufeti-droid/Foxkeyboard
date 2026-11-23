@@ -1,6 +1,8 @@
 package unicode.sinhala.keyboard.ui
 
 import android.content.Context
+import android.content.Intent
+import unicode.sinhala.keyboard.memory.ConversationMemoryActivity
 import android.content.SharedPreferences
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
@@ -79,6 +81,11 @@ fun SettingsScreen() {
             title = "AI Provider & API Key",
             summary = "Configure translation providers",
             onClick = { showAiSettings = true }
+        )
+        PreferenceItem(
+            title = "Conversation Memory (Profiles)",
+            summary = "Import KakaoTalk chat, add/delete messages, turn context on or off",
+            onClick = { context.startActivity(Intent(context, ConversationMemoryActivity::class.java)) }
         )
 
         SettingsCategory(title = "Appearance & Theme")

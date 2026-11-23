@@ -20,7 +20,7 @@ android {
 
     buildTypes {
         // Separate V7 test APK; existing V6.2, V6.1 and stable installs stay safe.
-        debug { applicationIdSuffix ".v7test" }
+        debug { applicationIdSuffix ".v8test" }
         release {
             minifyEnabled true
             shrinkResources true
