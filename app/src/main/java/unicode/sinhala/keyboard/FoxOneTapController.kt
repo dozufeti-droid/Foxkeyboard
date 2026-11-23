@@ -131,9 +131,9 @@ class FoxOneTapController(
             button.text = "🇱🇰 Sinhala Translate"
             return
         }
-        if (copied.length > FoxQuickTranslator.MAX_AI_CHARS) {
+        if (copied.length > FoxSinhalaExplainer.MAX_SOURCE_CHARS) {
             panel.visibility = View.VISIBLE
-            output.text = "Quick translation max 2000 characters. Disable V6 quick mode for longer messages."
+            output.text = "Sinhala explanation maximum: ${FoxSinhalaExplainer.MAX_SOURCE_CHARS} characters."
             return
         }
         if (copied == lastSinhalaSource && lastSinhalaResult != null) {
@@ -176,9 +176,36 @@ class FoxOneTapController(
                 throw e
             } catch (e: Exception) {
                 if (currentInfo() !== originInfo || currentEditor() !== originEditor) return@launch
-                output.text = errorLabel("🇱🇰", e)
+                output.text = sinhalaExplanationError(e)
                 button.text = "🇱🇰 Retry"
             }
+        }
+    }
+
+    /** A failed Gemini request should never hide its reason behind "unavailable". */
+    private fun sinhalaExplanationError(error: Exception): String {
+        val message = error.message.orEmpty()
+        return when {
+            error is java.net.SocketTimeoutException ->
+                "🇱🇰 Gemini response timed out. The message is safe; retry."
+            message.contains("429") ->
+                "🇱🇰 Gemini rate limit (HTTP 429). Please try later."
+            message.contains("HTTP 400") ->
+                "🇱🇰 Gemini request rejected (HTTP 400). Check the Gemini Model ID."
+            message.contains("401") || message.contains("403") ->
+                "🇱🇰 Gemini key or permission error. Check Settings."
+            message.contains("404") ->
+                "🇱🇰 Gemini model unavailable. Check Model ID."
+            message.contains("HTTP 50") ->
+                "🇱🇰 Gemini server busy. Retry later."
+            message.contains("incomplete JSON", ignoreCase = true) ||
+                message.contains("no text", ignoreCase = true) ->
+                "🇱🇰 Gemini answer was cut short. Retry this message."
+            message.contains("Sinhala meaning", ignoreCase = true) ->
+                "🇱🇰 Sinhala meaning missing from Gemini response. Retry."
+            message.contains("6000 characters", ignoreCase = true) ->
+                "🇱🇰 Message too long for one explanation (6000 characters max)."
+            else -> "🇱🇰 Gemini translation failed: ${message.take(110).ifBlank { "retry" }}"
         }
     }
 
