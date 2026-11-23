@@ -76,8 +76,8 @@ fun SettingsScreen() {
 
         SettingsCategory(title = "AI Translation")
         PreferenceItem(
-            title = "Google Gemini API Key & Model",
-            summary = "Configure your Gemini-only translations",
+            title = "AI Provider & API Key",
+            summary = "Configure translation providers",
             onClick = { showAiSettings = true }
         )
 

@@ -23,7 +23,31 @@ object FoxQuickTranslator {
         require(original.length <= MAX_AI_CHARS) { "Message too long for quick translate" }
 
         val prefs = context.getSharedPreferences("prefs", Context.MODE_PRIVATE)
-        val provider = "Google Gemini"
+        val selection = prefs.getString("wm_one_tap_provider", FOLLOW) ?: FOLLOW
+        val provider = if (selection == FOLLOW) {
+            prefs.getString("ai_provider", "GroqCloud") ?: "GroqCloud"
+        } else selection
+        if (provider == OFFLINE) {
+            require(target != "si" && original.none { it in '\u0D80'..'\u0DFF' }) {
+                "Sinhala/Singlish needs online AI. Select Gemini or GroqCloud in Settings."
+            }
+            val korean = original.any { it in '\uAC00'..'\uD7A3' || it in '\u1100'..'\u11FF' }
+            val source = if (korean) "ko" else "en"
+            require(source != target) { "Already in the requested language" }
+            return WmTranslationEngine.translateDownloaded(
+                WmTranslationRequest(text = original, source = source, target = target)
+            ).text
+        }
+        if (provider == "Google Web Translate") {
+            val result = GoogleWebTranslateProvider.translate(original, target, "auto")
+            if (target == "si" && !SinhalaOutputGuard.isValid(result, original)) {
+                throw SinhalaScriptException()
+            }
+            return result
+        }
+        require(provider in setOf("GroqCloud", "Google Gemini")) {
+            "Choose Gemini or GroqCloud in AI Settings"
+        }
         val model = prefs.getString("ai_model_$provider", "")?.trim().orEmpty()
         require(model.isNotBlank()) { "Set Model ID for $provider in AI Settings" }
         val key = ApiKeyStore(context).load(provider).orEmpty()
@@ -31,10 +55,17 @@ object FoxQuickTranslator {
         // A normal translation uses ONE request. Retry exactly ONCE, with a
         // stronger script-only instruction, only when Sinhala output is corrupt.
         // Do not switch AI provider/model without the user's selection.
-        var translated = gemini(original, target, model, key)
+        var translated = when (provider) {
+            "GroqCloud" -> groq(original, target, model, key)
+            else -> gemini(original, target, model, key)
+        }
         if (target == "si" && !SinhalaOutputGuard.isValid(translated, original)) {
-            translated = gemini(original, target, model, key,
-                strictSinhala = true, rejectedOutput = translated)
+            translated = when (provider) {
+                "GroqCloud" -> groq(original, target, model, key,
+                    strictSinhala = true, rejectedOutput = translated)
+                else -> gemini(original, target, model, key,
+                    strictSinhala = true, rejectedOutput = translated)
+            }
             if (!SinhalaOutputGuard.isValid(translated, original)) {
                 // A translation containing mixed scripts is never shown to the user.
                 throw SinhalaScriptException()
@@ -101,14 +132,8 @@ object FoxQuickTranslator {
             conversational meaning, not only individual words. Preserve I/you/
             he/she/they, questions, tense, uncertainty, negation, conditions,
             relationships, names, and feelings. Never add facts.
-            For English, use faithful, fluent everyday messaging English.
-            For Korean, use fluent native conversational Korean, normally
-            polite 해요체. Use 반말 only when the source clearly requires it.
-            Preserve negation, pronouns, who does what, tense, uncertainty,
-            questions, conditions, numbers and emotional tone precisely.
-            English input can be an intermediate translation of Sinhala:
-            DO NOT add relationships, intentions or a subject not in source.
-            Favor meaning and accurate natural Korean over literal phrasing.
+            In Korean use one consistent speech level: natural polite 해요체
+            ordinarily; 반말 only when the source clearly indicates intimacy.
             'pissu natanawa' about software means 'acting up', not literal dancing.
             If the input is JSON with original_message and meaning_clues_not_to_translate,
             translate ONLY original_message; the clues only disambiguate meaning.
@@ -124,6 +149,41 @@ object FoxQuickTranslator {
             JSONObject().put("source", text)
                 .put("rejected_translation", rejectedOutput).toString()
         } else messageWithSinglishHints(text)
+
+    private fun groq(text: String, target: String, model: String, key: String,
+                     strictSinhala: Boolean = false,
+                     rejectedOutput: String? = null): String {
+        val body = JSONObject()
+            .put("model", model)
+            .put("messages", JSONArray()
+                .put(JSONObject().put("role", "system").put("content", instruction(target, strictSinhala)))
+                .put(JSONObject().put("role", "user").put("content",
+                    requestMessage(text, strictSinhala, rejectedOutput))))
+            .put("max_completion_tokens", maxTokens(text))
+        // Short translation does not need expensive medium/high reasoning.
+        if (model in setOf("openai/gpt-oss-20b", "openai/gpt-oss-120b")) {
+            body.put("reasoning_effort", "low")
+        }
+        val connection = URL("https://api.groq.com/openai/v1/chat/completions")
+            .openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "POST"
+            connection.connectTimeout = 3200
+            connection.readTimeout = 9500
+            connection.instanceFollowRedirects = false
+            connection.doOutput = true
+            connection.setRequestProperty("Authorization", "Bearer $key")
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val code = connection.responseCode
+            if (code !in 200..299) throw IllegalStateException("GroqCloud HTTP $code")
+            val response = JSONObject(connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
+            val answer = response.getJSONArray("choices").getJSONObject(0)
+                .getJSONObject("message").optString("content", "").trim()
+            require(answer.isNotBlank()) { "GroqCloud returned empty translation" }
+            return answer
+        } finally { connection.disconnect() }
+    }
 
     private fun gemini(text: String, target: String, rawModel: String, key: String,
                        strictSinhala: Boolean = false,

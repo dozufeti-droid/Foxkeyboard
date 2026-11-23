@@ -16,13 +16,55 @@ object AiConnectionTester {
         if (model.isBlank()) return "Enter a Model ID"
         if (apiKey.isBlank()) return "No API Key saved"
 
-        require(provider == "Google Gemini") { "Only Google Gemini is supported" }
-        val id = model.trim().removePrefix("models/")
-        if (!id.matches(Regex("[A-Za-z0-9._-]+"))) return "Invalid Gemini Model ID"
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$id:generateContent"
-        val payload = JSONObject().put("contents", JSONArray().put(
-            JSONObject().put("parts", JSONArray().put(JSONObject().put("text", "Reply with OK.")))
-        ))
+        val modelId = model.trim()
+        val endpoint: String
+        val payload: JSONObject
+
+        if (provider == "Google Gemini") {
+            val id = modelId.removePrefix("models/")
+
+            if (!id.matches(Regex("[A-Za-z0-9._-]+"))) {
+                return "Invalid Gemini Model ID"
+            }
+
+            endpoint =
+                "https://generativelanguage.googleapis.com/" +
+                "v1beta/models/$id:generateContent"
+
+            payload = JSONObject().put(
+                "contents",
+                JSONArray().put(
+                    JSONObject().put(
+                        "parts",
+                        JSONArray().put(
+                            JSONObject().put(
+                                "text", "Reply with OK."
+                            )
+                        )
+                    )
+                )
+            )
+
+        } else {
+            endpoint = when (provider) {
+                "GroqCloud" ->
+                    "https://api.groq.com/openai/v1/chat/completions"
+                "OpenRouter" ->
+                    "https://openrouter.ai/api/v1/chat/completions"
+                else -> return "Unsupported AI Provider"
+            }
+
+            payload = JSONObject()
+                .put("model", modelId)
+                .put(
+                    "messages",
+                    JSONArray().put(
+                        JSONObject()
+                            .put("role", "user")
+                            .put("content", "Reply with only OK.")
+                    )
+                )
+        }
 
         return try {
             val conn = URL(endpoint).openConnection()
@@ -40,7 +82,15 @@ object AiConnectionTester {
                     "application/json; charset=utf-8"
                 )
 
-                conn.setRequestProperty("x-goog-api-key", apiKey)
+                if (provider == "Google Gemini") {
+                    conn.setRequestProperty(
+                        "x-goog-api-key", apiKey
+                    )
+                } else {
+                    conn.setRequestProperty(
+                        "Authorization", "Bearer $apiKey"
+                    )
+                }
 
                 conn.outputStream.use {
                     it.write(
