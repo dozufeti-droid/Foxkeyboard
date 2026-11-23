@@ -21,9 +21,6 @@
         android:supportsRtl="false"
         android:theme="@style/Theme.fox">
         <activity
-            android:name="unicode.sinhala.keyboard.memory.ConversationMemoryActivity"
-            android:exported="false" />
-        <activity
             android:name="unicode.sinhala.keyboard.VoicePermissionActivity"
             android:exported="false"
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
