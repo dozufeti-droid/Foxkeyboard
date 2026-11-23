@@ -64,6 +64,11 @@ class ConversationMemoryStore(context: Context) :
         return out
     }
 
+    /** Read-only count; does not load full chat history into the settings UI. */
+    fun messageCount(profileId: Long): Int = readableDatabase.rawQuery(
+        "SELECT COUNT(*) FROM messages WHERE profile_id = ?", arrayOf(profileId.toString())
+    ).use { cursor -> if (cursor.moveToFirst()) cursor.getInt(0) else 0 }
+
     fun getProfile(id: Long): Profile? {
         readableDatabase.rawQuery("SELECT name FROM profiles WHERE id = ?", arrayOf(id.toString())).use {
             return if (it.moveToFirst()) Profile(id, it.getString(0)) else null

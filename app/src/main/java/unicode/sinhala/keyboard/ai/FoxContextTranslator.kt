@@ -80,16 +80,19 @@ object FoxContextTranslator {
         val end = withoutFence.lastIndexOf('}')
         require(start >= 0 && end > start) { "AI did not return structured translation" }
         val json = JSONObject(withoutFence.substring(start, end + 1))
-        val ko = json.optString("ko", "").trim()
-        val si = json.optString("si", "").trim()
+        val ko = json.optString("ko", "").ifBlank { json.optString("korean", "") }.trim()
+        val si = json.optString("si", "").ifBlank {
+            json.optString("sinhala_meaning", "").ifBlank { json.optString("sinhala", "") }
+        }.trim()
         require(ko.isNotBlank() && si.isNotBlank()) { "Incomplete Korean/Sinhala result" }
         require(si.any { it in '\u0D80'..'\u0DFF' }) { "Sinhala meaning is missing; retry" }
         require(ko.any { it in '\uAC00'..'\uD7A3' || it in '\u3130'..'\u318F' }) {
             "Korean translation is missing; original draft kept"
         }
-        require(ko.none { it in '\u0D80'..'\u0DFF' } &&
-                si.none { it in '\uAC00'..'\uD7A3' }) {
-            "Mixed-language result rejected; original draft kept"
+        // Sinhala meaning may legitimately include Korean proper names or quoted
+        // Korean terms. Reject only Sinhala characters in the outgoing Korean.
+        require(ko.none { it in '\u0D80'..'\u0DFF' }) {
+            "Korean output contains Sinhala; original draft kept"
         }
         require(ko.length <= 6000 && si.length <= 6000) { "Translation exceeded length limit" }
         return Result(ko, si)

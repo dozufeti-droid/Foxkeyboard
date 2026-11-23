@@ -104,9 +104,24 @@ class FoxContextTranslationController(
                 throw e
             } catch (e: Exception) {
                 if (currentInfo() !== info || currentEditor() !== editor) return@launch
-                row.text = "🇰🇷 Retry"
-                Toast.makeText(context, e.message?.take(145) ?: "Context translation failed",
-                    Toast.LENGTH_LONG).show()
+                val message = e.message.orEmpty()
+                val hint = when {
+                    e is java.net.SocketTimeoutException || message.contains("timed out", true) ->
+                        "Timeout — tap again"
+                    message.contains("429") -> "Rate limit — retry later"
+                    message.contains("HTTP 401") || message.contains("HTTP 403") ->
+                        "Check AI API key"
+                    message.contains("HTTP 404") -> "Check AI model ID"
+                    message.contains("HTTP 50") -> "AI busy — retry later"
+                    message.contains("structured translation", true) ||
+                        message.contains("incomplete Korean", true) ||
+                        message.contains("Sinhala meaning", true) -> "AI format — tap again"
+                    message.contains("provider", true) || message.contains("Model ID", true) ->
+                        "Check AI settings"
+                    else -> "Context failed — tap again"
+                }
+                row.text = "🇰🇷 $hint"
+                Toast.makeText(context, hint, Toast.LENGTH_SHORT).show()
             }
         }
     }
