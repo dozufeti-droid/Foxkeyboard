@@ -26,8 +26,15 @@ internal object SinhalaOutputGuard {
             if (Character.isLetter(codePoint) || isCombiningMark) {
                 // Reject foreign letters AND diacritics; Sinhala vowel signs
                 // and virama remain valid because they belong to this block.
-                if (codePoint !in 0x0D80..0x0DFF) return false
-                if (Character.isLetter(codePoint)) containsSinhalaLetter = true
+                val isSinhala = codePoint in 0x0D80..0x0DFF
+                val isEnglish = codePoint in 0x0041..0x005A || codePoint in 0x0061..0x007A
+                val isKorean = codePoint in 0xAC00..0xD7A3 || codePoint in 0x1100..0x11FF ||
+                    codePoint in 0x3130..0x318F
+                val sourceHasEnglish = original.any { it in 'A'..'Z' || it in 'a'..'z' }
+                val sourceHasKorean = original.any { it in '가'..'힣' || it in 'ᄀ'..'ᇿ' }
+                if (!isSinhala && !(isEnglish && sourceHasEnglish) &&
+                    !(isKorean && sourceHasKorean)) return false
+                if (isSinhala && Character.isLetter(codePoint)) containsSinhalaLetter = true
             }
             // Reject right-to-left direction overrides/isolate markers.
             if (codePoint in 0x202A..0x202E || codePoint in 0x2066..0x2069) {
