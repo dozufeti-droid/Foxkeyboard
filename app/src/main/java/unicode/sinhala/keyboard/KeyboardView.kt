@@ -756,15 +756,15 @@ class KeyboardView(
             binding.emojiView.root.visibility = GONE
             binding.clipboardView.root.visibility = GONE
             binding.numpadView.root.visibility = VISIBLE
-            binding.btnEmoji.setImageResource(R.drawable.ic_emoji)
-            binding.btnClipboard.setImageResource(R.drawable.ic_clipboard)
+            binding.btnEmoji.setImageResource(R.drawable.fox_toolbar_emoji)
+            binding.btnClipboard.setImageResource(R.drawable.fox_toolbar_clipboard)
         } else {
             binding.numpadView.root.visibility = GONE
             binding.keyboardRows.visibility = VISIBLE
             binding.emojiView.root.visibility = GONE
             binding.clipboardView.root.visibility = GONE
-            binding.btnEmoji.setImageResource(R.drawable.ic_emoji)
-            binding.btnClipboard.setImageResource(R.drawable.ic_clipboard)
+            binding.btnEmoji.setImageResource(R.drawable.fox_toolbar_emoji)
+            binding.btnClipboard.setImageResource(R.drawable.fox_toolbar_clipboard)
         }
     }
 
@@ -776,7 +776,7 @@ class KeyboardView(
             binding.clipboardView.root.visibility = GONE
             binding.emojiView.root.visibility = VISIBLE
             binding.btnEmoji.setImageResource(R.drawable.ic_keyboard_arrow_left)
-            binding.btnClipboard.setImageResource(R.drawable.ic_clipboard)
+            binding.btnClipboard.setImageResource(R.drawable.fox_toolbar_clipboard)
 
             val firstChild = binding.emojiView.emojiCategories.getChildAt(0) as? TextView
             if (firstChild?.background != null) {
@@ -784,7 +784,7 @@ class KeyboardView(
             }
         } else {
             binding.emojiView.root.visibility = GONE
-            binding.btnEmoji.setImageResource(R.drawable.ic_emoji)
+            binding.btnEmoji.setImageResource(R.drawable.fox_toolbar_emoji)
             if (isNumpadMode) {
                 binding.numpadView.root.visibility = VISIBLE
                 binding.keyboardRows.visibility = GONE
@@ -803,11 +803,11 @@ class KeyboardView(
             binding.emojiView.root.visibility = GONE
             binding.clipboardView.root.visibility = VISIBLE
             binding.btnClipboard.setImageResource(R.drawable.ic_keyboard_arrow_left)
-            binding.btnEmoji.setImageResource(R.drawable.ic_emoji)
+            binding.btnEmoji.setImageResource(R.drawable.fox_toolbar_emoji)
             refreshClipboardList()
         } else {
             binding.clipboardView.root.visibility = GONE
-            binding.btnClipboard.setImageResource(R.drawable.ic_clipboard)
+            binding.btnClipboard.setImageResource(R.drawable.fox_toolbar_clipboard)
             if (isNumpadMode) {
                 binding.numpadView.root.visibility = VISIBLE
                 binding.keyboardRows.visibility = GONE
@@ -903,7 +903,7 @@ class KeyboardView(
     fun getSuggestionTextViews(): List<TextView> {
         val list = ArrayList<TextView>()
         // Use the root view of the suggestion container binding to access children
-        val suggestionContainerRoot = binding.suggestionContainer.root
+        val suggestionContainerRoot = binding.suggestionContainer.root.findViewById<ViewGroup>(R.id.fox_suggestion_words)
 
         if (suggestionContainerRoot is ViewGroup) {
             // Iterate children and check tag to ensure correct order (0, 1, 2)

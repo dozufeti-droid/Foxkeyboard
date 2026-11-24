@@ -183,7 +183,7 @@ fun AiSettingsScreen(onBack: () -> Unit) {
                 }
             }
         } else {
-            AiKeyControls(provider)
+            if (provider != "Google Gemini") AiKeyControls(provider)
             OutlinedTextField(
                 value = model,
                 onValueChange = { value ->
@@ -194,8 +194,8 @@ fun AiSettingsScreen(onBack: () -> Unit) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
+            if (provider == "Google Gemini") FoxGeminiSmartControls(model)
             AiConnectionControls(provider, model)
-            if (provider == "Google Gemini" && model.trim().removePrefix("models/") == "gemini-3.5-flash-lite") FoxGeminiSmartControls()
         }
 
 

@@ -399,8 +399,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 keyboardView.suggestionContainerView,
                 keyboardView.emojiButtonView,
                 keyboardView.clipboardButtonView,
-                Prefs.getDarkTheme(this)
+                Prefs.getDarkTheme(this),
+                keyboardView.voiceContainerView
             )
+            topBarController?.showNormal()
             suggestionTextViews = keyboardView.getSuggestionTextViews()
             keyboardView.voiceContainerView.setOnClickListener { startOrStopFoxVoiceTyping() }
             // DKEY_TENK2026: no separate language button; hold the mic to choose.
@@ -645,7 +647,7 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         debouncer?.onTyping(token, onTypingImmediate = { t ->
             // Pure local lookup (<=500 words): avoid scheduling a coroutine per keypress.
             try {
-                val sList = suggestionEngine?.suggest(Normalizer.normalize(t, Normalizer.Form.NFC), 3) ?: emptyList<String>()
+                val sList = suggestionEngine?.suggest(Normalizer.normalize(t, Normalizer.Form.NFC), 8) ?: emptyList<String>()
                 if (sList.isNotEmpty()) {
                     topBarController?.showSuggestions(sList, suggestionTextViews) { suggestion ->
                         onSuggestionClicked(suggestion)
@@ -2176,13 +2178,10 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
 
                 val labels = mutableMapOf<String, String>()
+                // Hints use the active phonetic composer's spelling, not the legacy map.
                 for ((k, v) in keySet) {
-                    val key = k.lowercase()
-
-                    val charMap = singlishMap[if (caps) key.uppercase() else key]
-                    if (charMap != null && charMap != CHAR.EMPTY) {
-                        labels[k] = charMap.text
-                    }
+                    val hint = FoxPhoneticComposer.keyHint(v)
+                    if (hint.isNotEmpty()) labels[k] = hint
                 }
                 keyboardView.setSecondaryLabels(labels)
             }

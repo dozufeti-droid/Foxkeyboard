@@ -32,26 +32,26 @@
 
         <ImageView
             android:id="@+id/btn_clipboard"
-            android:layout_width="40dp"
+            android:layout_width="32dp"
             android:layout_height="match_parent"
-            android:src="@drawable/ic_clipboard"
-            android:padding="8dp"
+            android:src="@drawable/fox_toolbar_clipboard"
+            android:padding="5dp"
             android:background="?android:selectableItemBackground"
             android:contentDescription="Clipboard" />
 
         <ImageView
             android:id="@+id/btn_emoji"
-            android:layout_width="40dp"
+            android:layout_width="32dp"
             android:layout_height="match_parent"
-            android:src="@drawable/ic_emoji"
-            android:padding="8dp"
+            android:src="@drawable/fox_toolbar_emoji"
+            android:padding="5dp"
             android:background="?android:selectableItemBackground"
             android:contentDescription="Emoji" />
         <!-- Mic controls both dictation and language selection. -->
 <!-- Mic button is independent: tap = start/stop. -->
         <FrameLayout
             android:id="@+id/voice_container"
-            android:layout_width="44dp"
+            android:layout_width="36dp"
             android:layout_height="match_parent"
             android:background="?android:selectableItemBackground"
             android:clickable="true"
@@ -60,8 +60,8 @@
             android:contentDescription="Voice typing. Tap to start or stop">
             <View
                 android:id="@+id/voice_pulse_ring"
-                android:layout_width="34dp"
-                android:layout_height="34dp"
+                android:layout_width="30dp"
+                android:layout_height="30dp"
                 android:layout_gravity="center"
                 android:background="@drawable/fox_voice_pulse_ring"
                 android:visibility="gone"
@@ -70,14 +70,14 @@
                 android:id="@+id/btn_voice"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:src="@drawable/ic_fox_voice_mic"
-                android:padding="9dp"
+                android:src="@drawable/fox_toolbar_mic"
+                android:padding="7dp"
                 android:importantForAccessibility="no" />
             <!-- Small non-interactive badge INSIDE the existing mic touch target. -->
             <TextView
                 android:id="@+id/voice_lang_badge"
-                android:layout_width="22dp"
-                android:layout_height="17dp"
+                android:layout_width="17dp"
+                android:layout_height="13dp"
                 android:layout_gravity="bottom|end"
                 android:layout_marginEnd="2dp"
                 android:layout_marginBottom="1dp"
@@ -513,10 +513,10 @@
 
                 <ImageView
                     android:id="@+id/space"
-                    android:layout_width="48dp"
+                    android:layout_width="0dp"
                     android:layout_height="match_parent"
-                    android:layout_weight="3"
-                    android:background="@drawable/key_background_normal"
+                    android:layout_weight="2.7"
+                    android:background="@drawable/fox_compact_space"
                     android:padding="4dp"
                     android:scaleType="centerInside"
                     android:src="@drawable/ic_space_bar"

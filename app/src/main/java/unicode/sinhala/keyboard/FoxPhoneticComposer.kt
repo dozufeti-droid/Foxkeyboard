@@ -98,6 +98,8 @@ internal class FoxPhoneticComposer {
 
         private val consonants = listOf(
             Consonant("chh", "ඡ"), Consonant("thh", "ථ"), Consonant("dhh", "ධ"),
+            Consonant("Kh", "ඛ"), Consonant("Gh", "ඝ"), Consonant("Ch", "ඡ"),
+            Consonant("Th", "ථ"), Consonant("Dh", "ධ"), Consonant("Ph", "ඵ"), Consonant("Bh", "භ"),
             Consonant("zdh", "ඳ"),
             Consonant("ch", "ච"), Consonant("kh", "ඛ"), Consonant("gh", "ඝ"),
             Consonant("jh", "ඣ"), Consonant("th", "ත"), Consonant("dh", "ද"),
@@ -108,7 +110,7 @@ internal class FoxPhoneticComposer {
             Consonant("zk", "ඤ"), Consonant("zh", "ඥ"),
             Consonant("k", "ක"), Consonant("K", "ඛ"),
             Consonant("g", "ග"), Consonant("G", "ඝ"),
-            Consonant("c", "ච"), Consonant("C", "ඡ"),
+            Consonant("c", "ක"), Consonant("C", "ඡ"),
             Consonant("j", "ජ"), Consonant("J", "ඣ"),
             Consonant("t", "ට"), Consonant("T", "ඨ"),
             Consonant("d", "ඩ"), Consonant("D", "ඪ"),
@@ -130,6 +132,32 @@ internal class FoxPhoneticComposer {
             vowels.firstOrNull { s.startsWith(it.roman, at) }
         private fun matchConsonant(s: String, at: Int): Consonant? =
             consonants.firstOrNull { s.startsWith(it.roman, at) }
+
+        /** Key-face hints follow the actual phonetic mapping. Slash means an h-based variant.
+         * Capital-first digraphs are user-requested aliases; lowercase c and k share ක.
+         */
+        internal fun keyHint(key: String): String {
+            if (key.length != 1) return ""
+            return when (key) {
+                "k" -> "ක/ඛ"
+                "g" -> "ග/ඝ"
+                "c" -> "ක/ච"
+                "j" -> "ජ/ඣ"
+                "t" -> "ට/ත/ථ"
+                "T" -> "ඨ/ථ"
+                "d" -> "ඩ/ද/ධ"
+                "D" -> "ඪ/ධ"
+                "p" -> "ප/ඵ"
+                "b" -> "බ/භ"
+                "B" -> "ඹ/භ"
+                "s" -> "ස/ශ"
+                "z" -> ""
+                else -> {
+                    val value = if (key[0] in "aAiIuUeEoORxHX") convert(key) else convert(key + "a")
+                    if (value.any { it in '\u0D80'..'\u0DFF' }) value else ""
+                }
+            }
+        }
 
         /** Stateless O(length * constant alphabet) rendering. */
         internal fun convert(s: String): String {

@@ -2,6 +2,8 @@ package ime.imeui
 
 import android.graphics.Color
 import android.view.View
+import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.widget.TextView
 import unicode.sinhala.com.R
 
@@ -9,69 +11,76 @@ class TopBarController(
     private val suggestionContainer: View?,
     private val emojiButton: View?,
     private val clipboardButton: View? = null,
-    private val darkTheme: Boolean = false
+    private val darkTheme: Boolean = false,
+    private val voiceButton: View? = null
 ) {
+    private val chip: TextView? = suggestionContainer?.findViewById(R.id.chip_clipboard_suggestion)
+    private val scroll: HorizontalScrollView? = suggestionContainer?.findViewById(R.id.fox_suggestion_scroll)
+    private val words: ViewGroup? = suggestionContainer?.findViewById(R.id.fox_suggestion_words)
+    private var lastWords: List<String> = emptyList()
 
-    private var chipClipboardSuggestion: TextView? = suggestionContainer?.findViewById(R.id.chip_clipboard_suggestion)
+    private fun pinTools() {
+        suggestionContainer?.visibility = View.VISIBLE
+        emojiButton?.visibility = View.VISIBLE
+        clipboardButton?.visibility = View.VISIBLE
+        voiceButton?.visibility = View.VISIBLE
+    }
 
-    private fun applyColors(tv: TextView?) {
-        if (tv == null) return
-        if (darkTheme) {
-            tv.setTextColor(Color.WHITE)
-        } else {
-            tv.setTextColor(Color.WHITE)
+    private fun clearWords() {
+        scroll?.visibility = View.GONE
+        scroll?.scrollTo(0, 0)
+        lastWords = emptyList()
+        val container = words ?: return
+        for (i in 0 until container.childCount) {
+            container.getChildAt(i).visibility = View.GONE
         }
     }
 
     fun showNormal() {
-        chipClipboardSuggestion?.visibility = View.GONE
-        suggestionContainer?.visibility = View.GONE
-        emojiButton?.visibility = View.VISIBLE
-        clipboardButton?.visibility = View.VISIBLE
+        pinTools()
+        chip?.visibility = View.GONE
+        clearWords()
     }
 
     fun showClipboardSuggestion(text: String, onClick: (String) -> Unit) {
+        pinTools()
         if (text.isBlank()) return
-        suggestionContainer?.visibility = View.VISIBLE
-        emojiButton?.visibility = View.VISIBLE
-        clipboardButton?.visibility = View.VISIBLE
-
-        chipClipboardSuggestion?.let { chip ->
-            chip.text = "Paste: ${text.replace("\n", " ")}"
-            chip.visibility = View.VISIBLE
-            chip.setOnClickListener {
+        clearWords()
+        chip?.let { view ->
+            view.text = "Paste: ${text.replace("\n", " ")}"
+            view.visibility = View.VISIBLE
+            view.setOnClickListener {
                 onClick(text)
-                chip.visibility = View.GONE
+                view.visibility = View.GONE
             }
         }
     }
 
     fun hideClipboardSuggestion() {
-        chipClipboardSuggestion?.visibility = View.GONE
+        pinTools()
+        chip?.visibility = View.GONE
     }
 
     fun showSuggestions(suggestions: List<String>, suggestionTextViews: List<TextView>, onClick: (String) -> Unit) {
-        if (chipClipboardSuggestion?.visibility == View.VISIBLE) {
-            // Keep clipboard suggestion active if present, or hide if suggestions are non-empty
-            if (suggestions.any { it.isNotEmpty() }) {
-                chipClipboardSuggestion?.visibility = View.GONE
-            } else {
-                return
-            }
+        pinTools()
+        val visibleWords = suggestions.filter { it.isNotBlank() }.take(suggestionTextViews.size)
+        if (visibleWords.isEmpty()) {
+            clearWords()
+            return
         }
-
-        emojiButton?.visibility = View.GONE
-        clipboardButton?.visibility = View.GONE
-        suggestionContainer?.visibility = View.VISIBLE
-        for (i in 0 until 3) {
-            val tv = suggestionTextViews.getOrNull(i)
-            val text = suggestions.getOrNull(i) ?: ""
-            if (tv != null) {
-                applyColors(tv)
-                tv.text = text
-                tv.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
-                tv.setOnClickListener { onClick(text) }
-            }
+        chip?.visibility = View.GONE
+        scroll?.visibility = View.VISIBLE
+        if (lastWords != visibleWords) {
+            scroll?.scrollTo(0, 0)
+            lastWords = visibleWords.toList()
+        }
+        for ((i, tv) in suggestionTextViews.withIndex()) {
+            val word = visibleWords.getOrNull(i).orEmpty()
+            tv.setTextColor(Color.WHITE)
+            tv.text = word
+            tv.contentDescription = word
+            tv.visibility = if (word.isEmpty()) View.GONE else View.VISIBLE
+            tv.setOnClickListener { if (word.isNotEmpty()) onClick(word) }
         }
     }
 }
