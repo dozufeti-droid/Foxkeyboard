@@ -184,6 +184,9 @@ class FoxOneTapController(
         return when {
             error is SinhalaScriptException ->
                 "🇱🇰 AI returned mixed-language text twice. Original kept; retry."
+            message.contains("local request limit", ignoreCase = true) -> "$flag Local quota/cooldown; retry later"
+            message.contains("invalid writing systems", ignoreCase = true) -> "$flag Sinhala correction unsuccessful; original kept"
+            message.contains("connection timed out", ignoreCase = true) -> "$flag Connection timed out; retry"
             message.contains("429") -> "$flag AI rate limit; retry later"
             message.contains("HTTP 401") || message.contains("HTTP 403") ->
                 "$flag API key or permissions rejected; check AI Settings"

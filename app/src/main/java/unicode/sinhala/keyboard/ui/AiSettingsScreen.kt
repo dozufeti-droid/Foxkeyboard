@@ -195,6 +195,7 @@ fun AiSettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.fillMaxWidth()
             )
             AiConnectionControls(provider, model)
+            if (provider == "Google Gemini" && model.trim().removePrefix("models/") == "gemini-3.5-flash-lite") FoxGeminiSmartControls()
         }
 
 

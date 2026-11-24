@@ -50,6 +50,11 @@ object FoxQuickTranslator {
         }
         val model = prefs.getString("ai_model_$provider", "")?.trim().orEmpty()
         require(model.isNotBlank()) { "Set Model ID for $provider in AI Settings" }
+        // FOX_SMART_GEMINI_V9: preserve all non-Gemini paths.
+        if (provider == "Google Gemini" && model.removePrefix("models/") == "gemini-3.5-flash-lite") {
+            return FoxGeminiSmart.translate(context, original, target, model,
+                instruction(target), messageWithSinglishHints(original))
+        }
         val key = ApiKeyStore(context).load(provider).orEmpty()
         require(key.isNotBlank()) { "Save an API key for $provider in AI Settings" }
         // A normal translation uses ONE request. Retry exactly ONCE, with a
@@ -104,8 +109,8 @@ object FoxQuickTranslator {
             val correction = if (strictSinhala) """
                 The input JSON has source and rejected_translation fields.
                 Translate SOURCE accurately. The rejected draft can help only
-                with wording; fix all non-Sinhala letters. Do not copy its errors.
-                A single Latin/Hangul/Devanagari/Hebrew letter is invalid.
+                with wording; fix foreign letters in Sinhala meanings. Preserve source vocabulary. Do not copy its errors.
+                Sinhala meanings must not contain foreign letters. Original Korean/English words are valid ONLY on the left of vocabulary dashes; never remove those words. Other foreign writing systems are invalid.
             """.trimIndent() else ""
             return """
                 You explain copied Korean or English chat messages in clear,
