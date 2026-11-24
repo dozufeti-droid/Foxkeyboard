@@ -17,7 +17,7 @@ object FoxQuickTranslator {
     const val OFFLINE = "Offline English-Korean"
 
     /** Explicitly selected provider; no silent cross-provider forwarding. */
-    suspend fun translate(context: Context, original: String, target: String): String {
+    suspend fun translate(context: Context, original: String, target: String, onPartial: suspend (String) -> Unit = {}): String {
         require(target in setOf("si", "en", "ko")) { "Unsupported target language" }
         require(original.isNotBlank()) { "Enter or copy a message first" }
         require(original.length <= MAX_AI_CHARS) { "Message too long for quick translate" }
@@ -53,7 +53,7 @@ object FoxQuickTranslator {
         // FOX_SMART_GEMINI_V9: preserve all non-Gemini paths.
         if (provider == "Google Gemini" && model.removePrefix("models/") == "gemini-3.5-flash-lite") {
             return FoxGeminiSmart.translate(context, original, target, model,
-                instruction(target), messageWithSinglishHints(original))
+                instruction(target), messageWithSinglishHints(original), onPartial)
         }
         val key = ApiKeyStore(context).load(provider).orEmpty()
         require(key.isNotBlank()) { "Save an API key for $provider in AI Settings" }

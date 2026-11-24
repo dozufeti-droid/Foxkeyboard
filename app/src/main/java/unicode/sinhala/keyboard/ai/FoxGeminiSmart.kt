@@ -31,7 +31,7 @@ internal object FoxGeminiSmart {
     }
     private fun keyForCache(model: String, target: String, original: String, prompt: String, request: String, keys: List<Key>): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(
-            listOf(model, target, original, prompt, request, keys.joinToString { it.value }, if (target == "si") "chat-si-v2" else "")
+            listOf(model, target, original, prompt, request, keys.joinToString { it.value }, if (target == "si") "chat-hybrid-v4" else "")
                 .joinToString("\u0000").toByteArray(Charsets.UTF_8)
         ).joinToString("") { "%02x".format(it.toInt() and 255) }
     private fun getCached(key: String): String? = synchronized(cache) {
@@ -41,8 +41,8 @@ internal object FoxGeminiSmart {
         cache[key] = Cached(text, android.os.SystemClock.elapsedRealtime()); Unit
     }
     suspend fun translate(context: Context, original: String, target: String, rawModel: String,
-                          outgoingPrompt: String, request: String): String {
-        if (target == "si") FoxSinhalaChat.local(original)?.let { return "තේරුම:\n$it" }
+                          outgoingPrompt: String, request: String, onPartial: suspend (String) -> Unit = {}): String {
+        if (target == "si") FoxHybridChat.local(original)?.let { return it.display() }
         val c = context.applicationContext
         val model = rawModel.removePrefix("models/")
         require(model.matches(Regex("[A-Za-z0-9._-]+"))) { "Invalid Gemini Model ID" }
@@ -64,7 +64,8 @@ internal object FoxGeminiSmart {
                     val fingerprint = keyFingerprint(key.value)
                     if ((invalidKeysUntil[fingerprint] ?: 0L) > android.os.SystemClock.elapsedRealtime()) continue
                     try {
-                        return@withTimeout attempt(c, key, model, original, target, outgoingPrompt, request, hedge)
+                        return@withTimeout if (target == "si") hybridAttempt(c, key, model, original, onPartial)
+                        else attempt(c, key, model, original, target, outgoingPrompt, request, hedge)
                     } catch (e: Failure) {
                         last = e
                         if (e.fault != Fault.AUTH) throw e
@@ -79,8 +80,43 @@ internal object FoxGeminiSmart {
             throw Failure(Fault.NETWORK, "Gemini connection timed out; retry")
         }
         val answer = requireNotNull(result)
-        if (cacheEnabled) cacheResult(ck, answer)
+        if (cacheEnabled && (target != "si" || !FoxHybridChat.isPartialDisplay(answer))) cacheResult(ck, answer)
         return answer
+    }
+    // One bilingual request; at most one recovery request. No speculative duplicate for incoming chat.
+    private suspend fun hybridAttempt(c: Context, key: Key, model: String, original: String,
+                                      onPartial: suspend (String) -> Unit): String {
+        suspend fun fetch(missing: String?, known: FoxHybridChat.Pairing): FoxHybridChat.Pairing {
+            if (!FoxGeminiUsage.reserve(c, key.slot)) throw Failure(Fault.LOCAL_LIMIT, "Gemini local request limit; retry later")
+            val input = if (missing == null) original else JSONObject().put("original", original)
+                .put("english_reference", known.english ?: "").put("sinhala_reference", known.sinhala ?: "").toString()
+            val raw = network(key.value, model, "hybrid-chat", FoxHybridChat.prompt(missing), input, false, false) { ms -> FoxGeminiUsage.block(ms) }
+            val result = FoxHybridChat.parse(raw, missing)
+            if (!result.useful) throw Failure(Fault.OUTPUT, "No usable English or Sinhala translation")
+            FoxGeminiUsage.success(c, key.slot)
+            return result
+        }
+        var known = FoxHybridChat.Pairing()
+        var failure: Failure? = null
+        try { known = withTimeoutOrNull(9500L) { fetch(null, known) }
+                ?: throw Failure(Fault.NETWORK, "Gemini connection timed out; retry") } catch (e: Failure) {
+            if (e.fault !in setOf(Fault.OUTPUT, Fault.BUSY, Fault.NETWORK)) throw e
+            failure = e
+            if (e.fault != Fault.OUTPUT) delay(600L)
+        }
+        if (known.complete) return known.display()
+        if (known.useful) onPartial(known.display(pending = true))
+        val missing = when { known.english != null -> "si"; known.sinhala != null -> "en"; else -> null }
+        try {
+            val recovered = withTimeoutOrNull(8500L) { fetch(missing, known) }
+            if (recovered != null) known = known.merge(recovered)
+        } catch (e: Failure) {
+            if (!known.useful) throw e
+            // Retain valid half even if the missing half hits a network/quota error.
+            failure = e
+        }
+        if (known.useful) return known.display()
+        throw failure ?: Failure(Fault.OUTPUT, "No usable English or Sinhala translation")
     }
     private suspend fun attempt(c: Context, key: Key, model: String, original: String, target: String,
                                 outgoingPrompt: String, request: String, hedge: Boolean): String {
@@ -158,7 +194,8 @@ internal object FoxGeminiSmart {
         val instructions = if (target == "si") FoxSinhalaChat.prompt(json, correction, finalRecovery) else prompt +
             if (correction) "\nCheck the source meaning carefully. Return a complete translation in the requested language only." else ""
         val cfg = JSONObject().put("temperature", 0.1)
-            .put("maxOutputTokens", if (target == "si") (request.length * 5 + 256).coerceIn(512, 4096)
+            .put("maxOutputTokens", if (target == "hybrid-chat") (request.length * 8 + 512).coerceIn(768, 4096)
+                else if (target == "si") (request.length * 5 + 256).coerceIn(512, 4096)
                 else (request.length * 3 + 128).coerceIn(384, 4096))
         if (model in setOf("gemini-2.5-flash", "gemini-2.5-flash-lite")) cfg.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
         if (model == "gemini-3.5-flash-lite") cfg.put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal"))
@@ -204,7 +241,7 @@ internal object FoxGeminiSmart {
                 val connection = URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection
                 conn = connection; active.set(connection)
                 if (!cont.isActive) return@submit
-                connection.requestMethod = "POST"; connection.connectTimeout = 2800; connection.readTimeout = 6500
+                connection.requestMethod = "POST"; connection.connectTimeout = 2800; connection.readTimeout = if (target == "hybrid-chat") 8000 else 6500
                 connection.instanceFollowRedirects = false; connection.doOutput = true
                 connection.setRequestProperty("x-goog-api-key", key)
                 connection.setRequestProperty("Content-Type", "application/json; charset=utf-8")

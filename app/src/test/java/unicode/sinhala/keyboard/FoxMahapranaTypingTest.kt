@@ -42,14 +42,18 @@ class FoxMahapranaTypingTest {
         assertEquals("ථා", FoxPhoneticComposer.convert("Thaa"))
         assertEquals("ධනය", FoxPhoneticComposer.convert("Dhanaya"))
         assertEquals("භාෂා", FoxPhoneticComposer.convert("BhaaSaa"))
-        assertEquals("ක/ච", FoxPhoneticComposer.keyHint("c"))
+        assertEquals("ක", FoxPhoneticComposer.keyHint("c"))
     }
     @Test fun visualHintsMatchRealKeys() {
-        assertEquals("ඨ/ථ", FoxPhoneticComposer.keyHint("T"))
-        assertEquals("ඪ/ධ", FoxPhoneticComposer.keyHint("D"))
-        assertEquals("ක/ඛ", FoxPhoneticComposer.keyHint("k"))
-        assertEquals("ට/ත/ථ", FoxPhoneticComposer.keyHint("t"))
+        assertEquals("ඨ", FoxPhoneticComposer.keyHint("T"))
+        assertEquals("ඪ", FoxPhoneticComposer.keyHint("D"))
+        assertEquals("ක", FoxPhoneticComposer.keyHint("k"))
+        assertEquals("ට", FoxPhoneticComposer.keyHint("t"))
         assertEquals("ඇ", FoxPhoneticComposer.keyHint("A"))
         assertEquals("", FoxPhoneticComposer.keyHint("z"))
+        for (key in 'a'..'z') {
+            val hint = FoxPhoneticComposer.keyHint(key.toString())
+            org.junit.Assert.assertTrue(hint.length <= 1 && !hint.contains('/'))
+        }
     }
 }

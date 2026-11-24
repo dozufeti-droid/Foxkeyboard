@@ -133,30 +133,11 @@ internal class FoxPhoneticComposer {
         private fun matchConsonant(s: String, at: Int): Consonant? =
             consonants.firstOrNull { s.startsWith(it.roman, at) }
 
-        /** Key-face hints follow the actual phonetic mapping. Slash means an h-based variant.
-         * Capital-first digraphs are user-requested aliases; lowercase c and k share ක.
-         */
+        /** Show a single Sinhala base character; never a slash-separated hint. */
         internal fun keyHint(key: String): String {
-            if (key.length != 1) return ""
-            return when (key) {
-                "k" -> "ක/ඛ"
-                "g" -> "ග/ඝ"
-                "c" -> "ක/ච"
-                "j" -> "ජ/ඣ"
-                "t" -> "ට/ත/ථ"
-                "T" -> "ඨ/ථ"
-                "d" -> "ඩ/ද/ධ"
-                "D" -> "ඪ/ධ"
-                "p" -> "ප/ඵ"
-                "b" -> "බ/භ"
-                "B" -> "ඹ/භ"
-                "s" -> "ස/ශ"
-                "z" -> ""
-                else -> {
-                    val value = if (key[0] in "aAiIuUeEoORxHX") convert(key) else convert(key + "a")
-                    if (value.any { it in '\u0D80'..'\u0DFF' }) value else ""
-                }
-            }
+            if (key.length != 1 || key == "z" || key == "Z") return ""
+            val value = if (key[0] in "aAiIuUeEoORxHX") convert(key) else convert(key + "a")
+            return value.firstOrNull { it in '\u0D80'..'\u0DFF' }?.toString() ?: ""
         }
 
         /** Stateless O(length * constant alphabet) rendering. */

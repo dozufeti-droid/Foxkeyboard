@@ -15,6 +15,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import unicode.sinhala.keyboard.ai.FoxHybridChat
 import unicode.sinhala.keyboard.ai.FoxQuickTranslator
 import unicode.sinhala.keyboard.ai.SinhalaScriptException
 import unicode.sinhala.keyboard.ai.SinglishTranslationHints
@@ -142,13 +143,24 @@ class FoxOneTapController(
             return // instant show/hide of this field's last translation
         }
         panel.visibility = View.VISIBLE
-        output.text = "Translating to Sinhala…"
+        output.text = "Translating…"
         button.text = "🇱🇰 …"
         val startedMs = SystemClock.elapsedRealtime()
         job = scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    FoxQuickTranslator.translate(context, copied, "si")
+                    FoxQuickTranslator.translate(context, copied, "si") { partial ->
+                        withContext(Dispatchers.Main.immediate) {
+                            if (currentInfo() === originInfo && currentEditor() === originEditor) {
+                                val current = try {
+                                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager)
+                                        ?.primaryClip?.takeIf { it.itemCount > 0 }
+                                        ?.getItemAt(0)?.text?.toString()?.trim()
+                                } catch (_: Exception) { null }
+                                if (current == copied) output.text = partial
+                            }
+                        }
+                    }
                 }
                 // Never display a copied message in another app/editor.
                 if (currentInfo() !== originInfo || currentEditor() !== originEditor) return@launch
@@ -164,11 +176,12 @@ class FoxOneTapController(
                     button.text = "🇱🇰 Sinhala"
                     return@launch
                 }
-                lastSinhalaSource = copied
-                lastSinhalaResult = result
+                val partial = FoxHybridChat.isPartialDisplay(result)
+                lastSinhalaSource = if (partial) null else copied
+                lastSinhalaResult = if (partial) null else result
                 output.text = result
                 val elapsed = (SystemClock.elapsedRealtime() - startedMs) / 1000.0
-                button.text = "🇱🇰 ✓ %.1fs".format(java.util.Locale.US, elapsed)
+                button.text = if (partial) "🇱🇰 Retry" else "🇱🇰 ✓ %.1fs".format(java.util.Locale.US, elapsed)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
