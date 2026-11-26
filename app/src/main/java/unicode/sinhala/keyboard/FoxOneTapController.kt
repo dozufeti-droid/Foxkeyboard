@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import unicode.sinhala.keyboard.ai.FoxHybridChat
 import unicode.sinhala.keyboard.ai.FoxQuickTranslator
+import unicode.sinhala.keyboard.ai.PapagoWire
+import unicode.sinhala.keyboard.ai.PapagoTranslationProvider
+import unicode.sinhala.keyboard.ai.PapagoHttpException
 import unicode.sinhala.keyboard.ai.SinhalaScriptException
 import unicode.sinhala.keyboard.ai.SinglishTranslationHints
 
@@ -32,6 +35,8 @@ class FoxOneTapController(
     private val currentEditor: () -> InputConnection?
 ) {
     private var job: Job? = null
+    private var koreanJob: Job? = null
+    fun isKoreanTranslationRunning(): Boolean = koreanJob?.isActive == true
     // Only the last successful copied-message result, in memory, scoped to the
     // current input field. This is cleared when IME switches editors; no disk IO.
     private var lastSinhalaSource: String? = null
@@ -40,11 +45,16 @@ class FoxOneTapController(
     fun cancel() {
         job?.cancel()
         job = null
+        koreanJob = null
         lastSinhalaSource = null
         lastSinhalaResult = null
     }
 
     fun translateDraft(target: String, row: TextView) {
+        if (target == "ko") {
+            translateKoreanDraft(row)
+            return
+        }
         val flag = if (target == "en") "🇬🇧" else "🇰🇷"
         val info = currentInfo() ?: return
         val editor = currentEditor() ?: return
@@ -114,6 +124,107 @@ class FoxOneTapController(
                 Toast.makeText(context, errorLabel(flag, e), Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private data class KoreanDraft(
+        val before: String, val selected: String?, val after: String,
+        val original: String, val wholeField: Boolean
+    )
+
+    // Read a complete draft when possible. If an editor cannot prove the full
+    // field is available, require an explicit selection instead of deleting text.
+    private fun koreanDraft(editor: InputConnection): KoreanDraft? {
+        val limit = PapagoWire.MAX_CHARS + 1
+        val before = editor.getTextBeforeCursor(limit, 0)?.toString() ?: return null
+        val after = editor.getTextAfterCursor(limit, 0)?.toString() ?: return null
+        val selected = editor.getSelectedText(0)?.toString()?.takeIf { it.isNotEmpty() }
+        if (selected != null) return KoreanDraft(before, selected, after, selected, false)
+        val request = android.view.inputmethod.ExtractedTextRequest().apply { hintMaxChars = limit }
+        val full = editor.getExtractedText(request, 0) ?: return null
+        val original = full.text?.toString() ?: return null
+        if (full.startOffset != 0 || full.partialStartOffset != -1 ||
+            full.selectionStart != before.length || full.selectionEnd != before.length ||
+            original != before + after || original.length > PapagoWire.MAX_CHARS) return null
+        return KoreanDraft(before, null, after, original, true)
+    }
+
+    private fun translateKoreanDraft(row: TextView) {
+        val info = currentInfo() ?: return
+        val editor = currentEditor() ?: return
+        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
+        if ((info.inputType and InputType.TYPE_MASK_CLASS) != InputType.TYPE_CLASS_TEXT ||
+            variation !in setOf(InputType.TYPE_TEXT_VARIATION_NORMAL,
+                InputType.TYPE_TEXT_VARIATION_SHORT_MESSAGE, InputType.TYPE_TEXT_VARIATION_LONG_MESSAGE,
+                InputType.TYPE_TEXT_VARIATION_WEB_EDIT_TEXT) ||
+            (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
+            row.text = "🇰🇷 Unavailable in this field"
+            return
+        }
+        if (job?.isActive == true) return
+        // Do not commit a translation over any active composing span.
+        if (!editor.finishComposingText()) {
+            row.text = "🇰🇷 Select English text first"
+            return
+        }
+        val draft = koreanDraft(editor)
+        if (draft == null || draft.original.length > PapagoWire.MAX_CHARS) {
+            row.text = "🇰🇷 Select English text (max 2000)"
+            return
+        }
+        val text = draft.original.trim()
+        if (!PapagoWire.isEnglishCandidate(text)) {
+            row.text = "🇰🇷 Translate to English first"
+            return
+        }
+        row.text = "🇰🇷 …"
+        val startedMs = SystemClock.elapsedRealtime()
+        val launched = scope.launch {
+            try {
+                val translated = withContext(Dispatchers.IO) {
+                    PapagoTranslationProvider.translateEnglish(text)
+                }
+                if (currentInfo() !== info || currentEditor() !== editor) return@launch
+                if (koreanDraft(editor) != draft || !editor.finishComposingText() ||
+                    koreanDraft(editor) != draft) {
+                    row.text = "🇰🇷 Draft changed; tap again"
+                    return@launch
+                }
+                editor.beginBatchEdit()
+                try {
+                    if (draft.wholeField) {
+                        if (!editor.setSelection(0, draft.original.length)) {
+                            row.text = "🇰🇷 Select English text first"
+                            return@launch
+                        }
+                    }
+                    // Commit replaces the actual selection. Never delete first.
+                    if (editor.getSelectedText(0)?.toString() != draft.original) {
+                        if (draft.wholeField) editor.setSelection(draft.before.length, draft.before.length)
+                        row.text = "🇰🇷 Selection changed; tap again"
+                        return@launch
+                    }
+                    if (!editor.commitText(translated, 1)) {
+                        if (draft.wholeField) editor.setSelection(draft.before.length, draft.before.length)
+                        row.text = "🇰🇷 Editor rejected replacement"
+                        return@launch
+                    }
+                } finally { editor.endBatchEdit() }
+                val elapsed = (SystemClock.elapsedRealtime() - startedMs) / 1000.0
+                row.text = "🇰🇷 ✓ %.1fs".format(java.util.Locale.US, elapsed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (currentInfo() !== info || currentEditor() !== editor) return@launch
+                row.text = when {
+                    e is PapagoHttpException && e.status in listOf(401, 403) -> "🇰🇷 Papago access denied"
+                    e is PapagoHttpException && e.status == 429 -> "🇰🇷 Papago limit; try later"
+                    e is java.net.SocketTimeoutException -> "🇰🇷 Papago timed out"
+                    else -> "🇰🇷 Papago unavailable; retry"
+                }
+            }
+        }
+        job = launched
+        koreanJob = launched
     }
 
     fun translateClipboardToSinhala(button: TextView, panel: View, output: TextView) {
