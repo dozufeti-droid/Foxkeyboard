@@ -93,7 +93,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
     private var aiTranslationSource: String? = null
     private var aiTranslationEnglish: String? = null
-    private var aiTranslationKorean: String? = null
 
     // An opt-in WM-style tool; does not replace any existing translate rows.
     private var wmTranslatePanel: WmTranslatePanel? = null
@@ -496,7 +495,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         aiTranslationJob?.cancel()
         aiTranslationSource = null
         aiTranslationEnglish = null
-        aiTranslationKorean = null
         if (::keyboardView.isInitialized) {
             keyboardView.aiEnglishView.text = "🇬🇧 English"
             keyboardView.aiKoreanView.text = "🇰🇷 Korean"
@@ -1064,7 +1062,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         aiTranslationJob?.cancel()
         aiTranslationSource = null
         aiTranslationEnglish = null
-        aiTranslationKorean = null
         row.text = "$flag Translating..."
         aiTranslationJob = serviceScope.launch {
             try {
@@ -1117,11 +1114,18 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     }
 
     private fun onAiTranslationRowTap(english: Boolean) {
+        // Korean short tap is independent of the existing AI provider.
+        if (!english) {
+            if (aiTranslationJob?.isActive == true) return
+            foxOneTapController.translateDraft("ko", keyboardView.aiKoreanView)
+            return
+        }
+        if (foxOneTapController.isKoreanTranslationRunning()) return
         if (getSharedPreferences("prefs", MODE_PRIVATE)
                 .getBoolean("wm_fast_one_tap_enabled", true)) {
             foxOneTapController.translateDraft(
-                if (english) "en" else "ko",
-                if (english) keyboardView.aiEnglishView else keyboardView.aiKoreanView
+                "en",
+                keyboardView.aiEnglishView
             )
             return
         }
@@ -1130,15 +1134,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
         val activeProvider = getSharedPreferences("prefs", MODE_PRIVATE)
             .getString("ai_provider", "GroqCloud")
         if (activeProvider == "Google Web Translate") {
-            onGoogleWebTranslationTap(if (english) "en" else "ko")
+            onGoogleWebTranslationTap("en")
             return
         }
         val source = aiTranslationSource
-        val translated = if (english) {
-            aiTranslationEnglish
-        } else {
-            aiTranslationKorean
-        }
+        val translated = aiTranslationEnglish
 
         if (source == null || translated == null) {
             requestAiTranslation()
@@ -1171,7 +1171,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
         aiTranslationSource = null
         aiTranslationEnglish = null
-        aiTranslationKorean = null
 
         keyboardView.aiEnglishView.text =
             "🇬🇧 Tap to translate"
@@ -1182,7 +1181,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
     private fun requestAiTranslation() {
         aiTranslationSource = null
         aiTranslationEnglish = null
-        aiTranslationKorean = null
 
         val info = currentInputEditorInfo ?: return
         val inputType = info.inputType
@@ -1197,7 +1195,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
             !allowed ||
             (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0) {
             keyboardView.aiEnglishView.text = "English: Unavailable in this field"
-            keyboardView.aiKoreanView.text = "Korean: Unavailable in this field"
             return
         }
 
@@ -1213,13 +1210,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
         if (source.isNullOrBlank()) {
             keyboardView.aiEnglishView.text = "English: Enter some text"
-            keyboardView.aiKoreanView.text = "Korean: Enter some text"
             return
         }
         // Fox AI quality repair v4: do not invent an ending for unfinished Singlish.
         if (unicode.sinhala.keyboard.ai.SinglishTranslationHints.isUnfinished(source)) {
             keyboardView.aiEnglishView.text = "🇬🇧 Finish the sentence, then translate"
-            keyboardView.aiKoreanView.text = "🇰🇷 Finish the sentence, then translate"
             return
         }
 
@@ -1230,7 +1225,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
         if (provider !in setOf("GroqCloud", "Google Gemini")) {
             keyboardView.aiEnglishView.text = "English: Select GroqCloud or Gemini"
-            keyboardView.aiKoreanView.text = "Korean: Select GroqCloud or Gemini"
             return
         }
 
@@ -1239,13 +1233,11 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
 
         if (model.isBlank()) {
             keyboardView.aiEnglishView.text = "English: Set Model ID"
-            keyboardView.aiKoreanView.text = "Korean: Set Model ID"
             return
         }
 
         aiTranslationJob?.cancel()
         keyboardView.aiEnglishView.text = "English: Translating..."
-        keyboardView.aiKoreanView.text = "Korean: Translating..."
 
         aiTranslationJob = serviceScope.launch {
             try {
@@ -1270,15 +1262,12 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 )?.trim()
                 if (latestDraft != source) {
                     keyboardView.aiEnglishView.text = "🇬🇧 Text changed — translate again"
-                    keyboardView.aiKoreanView.text = "🇰🇷 Text changed — translate again"
                     return@launch
                 }
 
                 aiTranslationSource = source
                 aiTranslationEnglish = result.first
-                aiTranslationKorean = result.second
                 keyboardView.aiEnglishView.text = "🇬🇧 ${result.first}"
-                keyboardView.aiKoreanView.text = "🇰🇷 ${result.second}"
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -1286,7 +1275,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                 if (e.message?.startsWith("Pronoun conflict") == true ||
                     e.message?.startsWith("Idiom conflict") == true) {
                     keyboardView.aiEnglishView.text = "🇬🇧 Meaning unclear — rephrase"
-                    keyboardView.aiKoreanView.text = "🇰🇷 Check the Sinhala wording"
                 } else {
                     val reason = e.message.orEmpty()
                     val hint = when {
@@ -1301,7 +1289,6 @@ class InputMethodService : android.inputmethodservice.InputMethodService(),
                         else -> "Translation failed — retry"
                     }
                     keyboardView.aiEnglishView.text = "🇬🇧 $hint"
-                    keyboardView.aiKoreanView.text = "🇰🇷 $hint"
                 }
             }
         }
