@@ -1,0 +1,48 @@
+name: Publish Fox Keyboard APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Successful APK Build Run ID"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download existing APK
+        uses: actions/download-artifact@v4
+        with:
+          name: FoxkeyboardAI-debug-apk
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: apk
+
+      - name: Publish APK Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          set -euo pipefail
+
+          SHA=$(gh run view "$RUN_ID" --json headSha --jq '.headSha')
+
+          mapfile -t APKS < <(find apk -type f -name '*.apk')
+          test "${#APKS[@]}" -eq 1
+
+          cp "${APKS[0]}" FoxKeyboard.apk
+
+          gh release create "apk-$RUN_ID" \
+            FoxKeyboard.apk \
+            --target "$SHA" \
+            --title "Fox Keyboard" \
+            --notes "Fox Keyboard APK" \
+            --latest
