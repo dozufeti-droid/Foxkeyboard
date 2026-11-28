@@ -22,7 +22,7 @@ internal object PapagoWire {
         require(isEnglishCandidate(text)) { "Translate to English first" }
         return listOf(
             "source" to "en", "target" to "ko", "text" to text,
-            "honorific" to "false", "dict" to "false", "useGlossary" to "false"
+            "honorific" to "true", "dict" to "false", "useGlossary" to "false"
         ).joinToString("&") { (key, value) ->
             URLEncoder.encode(key, "UTF-8") + "=" + URLEncoder.encode(value, "UTF-8")
         }

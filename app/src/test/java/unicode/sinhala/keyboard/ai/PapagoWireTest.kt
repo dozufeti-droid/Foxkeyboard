@@ -11,9 +11,9 @@ class PapagoWireTest {
             URLDecoder.decode(items[0], "UTF-8") to URLDecoder.decode(items[1], "UTF-8")
         }
 
-    @Test fun requestUsesEnglishKoreanAndNormalStyle() {
+    @Test fun requestUsesEnglishKoreanAndHonorificStyle() {
         assertEquals(mapOf("source" to "en", "target" to "ko", "text" to "Did you eat?",
-            "honorific" to "false", "dict" to "false", "useGlossary" to "false"), decoded("Did you eat?"))
+            "honorific" to "true", "dict" to "false", "useGlossary" to "false"), decoded("Did you eat?"))
     }
     @Test fun textIsEncodedWithoutLosingCharacters() {
         val text = "A+B & C=50%\nHello 😊 café"
